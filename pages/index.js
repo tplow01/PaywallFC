@@ -128,7 +128,7 @@ function BlackoutVisual() {
           { label: "Sky Sports", value: "215", color: "#4a90d9" },
           { label: "TNT Sports", value: "52",  color: "#f0a500" },
           { label: "Blacked out", value: "113", color: "#e03535" },
-          { label: "Cost per game", value: "~£3.02", color: "#fed107" },
+          { label: "Cost per game", value: "≈£3.02", color: "#fed107" },
         ].map((item, i) => (
           <div key={i} style={{ padding: "1.1rem", border: `1px solid ${item.color}30`, background: `${item.color}0a` }}>
             <div style={{ fontFamily: "'Kanit', sans-serif", fontWeight: 700, fontSize: "1.6rem", color: item.color, lineHeight: 1 }}>{item.value}</div>
@@ -611,6 +611,59 @@ export default function Landing() {
         @keyframes fu { to { opacity: 1; transform: none; } }
         .d1{animation-delay:.08s} .d2{animation-delay:.2s} .d3{animation-delay:.32s}
         .d4{animation-delay:.44s} .d5{animation-delay:.56s} .d6{animation-delay:.68s}
+
+        /* ── Hero scanlines ── */
+        .hero::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.025) 3px, rgba(0,0,0,0.025) 4px); pointer-events: none; z-index: 1; }
+        .hero-inner { z-index: 2; }
+
+        /* ── Glitch / blackout flicker on hero strike ── */
+        @keyframes strikeFlicker {
+          0%, 78%, 100% { opacity: 1; transform: none; }
+          80% { opacity: 0.2; transform: skewX(-4deg) translateX(-3px); }
+          82% { opacity: 1; transform: none; }
+          84% { opacity: 0.55; transform: translateX(3px) skewX(2deg); }
+          86% { opacity: 1; transform: none; }
+        }
+        @keyframes lineFlicker {
+          0%, 78%, 100% { transform: rotate(-1.5deg); opacity: 1; }
+          80% { transform: rotate(-1.5deg) scaleX(0.05); opacity: 0; }
+          82% { transform: rotate(-1.5deg) scaleX(1); opacity: 0.5; }
+          84% { transform: rotate(0.8deg) translateX(5px); opacity: 1; }
+          86% { transform: rotate(-1.5deg); }
+        }
+        .hero-hl .strike { animation: strikeFlicker 9s ease-in-out infinite; }
+        .hero-hl .strike::after { animation: lineFlicker 9s ease-in-out infinite; }
+
+        /* ── Stats ghost number ── */
+        .stats { position: relative; overflow: hidden; }
+        .stats::before { content: '£805'; position: absolute; right: -1rem; top: 50%; transform: translateY(-50%); font-family: 'Kanit', sans-serif; font-weight: 900; font-size: clamp(9rem, 20vw, 17rem); color: rgba(254,209,7,0.028); line-height: 1; pointer-events: none; letter-spacing: -0.04em; user-select: none; white-space: nowrap; }
+
+        /* ── Reverse ticker ── */
+        .ticker-r { background: #0e0e0e; padding: 0.55rem 0; overflow: hidden; border-bottom: 1px solid rgba(224,53,53,0.1); }
+        .ticker-r .ticker-inner { animation: tickR 40s linear infinite; }
+        @keyframes tickR { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+        .ticker-r .ticker-item { font-family: 'Kanit', sans-serif; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; padding: 0 2rem; color: rgba(224,53,53,0.55); }
+
+        /* ── Card hover enhancements ── */
+        .qcard { transition: border-color 0.25s, background 0.25s, transform 0.2s; }
+        .qcard:hover { border-left-color: rgba(224,53,53,0.9); background: rgba(224,53,53,0.09); transform: translateX(5px); }
+        .how-step { transition: background 0.3s; }
+        .how-step:hover { background: linear-gradient(180deg, rgba(254,209,7,0.07), rgba(254,209,7,0.01)); }
+
+        /* ── Petition pulse ── */
+        @keyframes countGlow {
+          0%, 100% { text-shadow: 0 0 28px rgba(254,209,7,0.22); }
+          50% { text-shadow: 0 0 55px rgba(254,209,7,0.55), 0 0 100px rgba(254,209,7,0.12); }
+        }
+        .pcount { animation: countGlow 3.5s ease-in-out infinite; }
+        @keyframes bandBreath {
+          0%, 100% { border-color: rgba(254,209,7,0.25); }
+          50% { border-color: rgba(254,209,7,0.6); box-shadow: 0 0 20px rgba(254,209,7,0.07); }
+        }
+        .pcount-band { animation: bandBreath 3.5s ease-in-out infinite; }
+
+        /* ── Sub btn active ── */
+        .sub-btn:active { transform: translateY(1px) scale(0.99); }
       `}</style>
 
       {/* NAV */}
@@ -691,6 +744,18 @@ export default function Landing() {
             <div key={i} style={{ display: "flex" }}>
               {["Sky Sports: £349.90/season","TNT Sports: £309.90/season","TV Licence: £145.32/season","113 games blacked out","30% unwatchable","£805.12 total cost","3 subscriptions. Still not enough.","The 3pm blackout. Still a thing.","Fans deserve better."].map((item, j) => (
                 <span key={j} className="ticker-item">{item} <span style={{ opacity: 0.35 }}>|</span></span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* REVERSE TICKER */}
+      <div className="ticker-r">
+        <div className="ticker-inner">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} style={{ display: "flex" }}>
+              {["3pm Saturday — signal lost","Blacked out. Again.","You paid. You can't watch.","1960 rule. 2026 fans.","380 games. 113 gone.","Your money. Their blackout.","No stream. No refund.","Still waiting for change.","Signal lost —"].map((item, j) => (
+                <span key={j} className="ticker-item">{item} <span style={{ opacity: 0.3 }}>·</span></span>
               ))}
             </div>
           ))}

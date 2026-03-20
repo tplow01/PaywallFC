@@ -1,7 +1,12 @@
 import Head from "next/head";
 import { useState, useEffect, useRef, useCallback } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 import { CLUBS, getClubByKey } from "../lib/clubs";
 import { isBlackout, PRICES } from "../lib/calculator";
+
+gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // ─── Video interrupt popup sequence ──────────────────────────────────────────
 const POPUP_SEQUENCE = [
@@ -120,51 +125,32 @@ function getResult(match, teamId) {
   return { score, result: diff > 0 ? "W" : diff < 0 ? "L" : "D" };
 }
 
-// ─── Intersection observer hook ──────────────────────────────────────────────
-function useInView(threshold = 0.2) {
-  const ref = useRef(null);
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true); },
-      { threshold }
-    );
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-  return [ref, inView];
-}
-
-// ─── Animated counter hook ───────────────────────────────────────────────────
-function useCountUp(target, duration = 2000, start = false) {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    if (!start || typeof window === "undefined") return;
-    let startTime = null;
-    let raf;
-    const step = (timestamp) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      const ease = 1 - Math.pow(1 - progress, 3);
-      setValue(ease * target);
-      if (progress < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration, start]);
-  return value;
-}
 
 // ─── Animated stat ────────────────────────────────────────────────────────────
 function AnimStat({ prefix = "", value, suffix = "", decimals = 0, label, accent }) {
-  const [ref, inView] = useInView(0.3);
-  const count = useCountUp(value, 1800, inView);
-  const display = decimals > 0 ? count.toFixed(decimals) : numFmt(count);
+  const ref = useRef(null);
+  const displayRef = useRef(null);
+  const proxy = useRef({ val: 0 });
+
+  useGSAP(() => {
+    const trigger = { trigger: ref.current, start: "top 82%", once: true };
+    gsap.from(ref.current, { opacity: 0, y: 20, duration: 0.6, ease: "power2.out", scrollTrigger: trigger });
+    gsap.to(proxy.current, {
+      val: value, duration: 1.8, ease: "power2.out",
+      scrollTrigger: trigger,
+      onUpdate() {
+        if (displayRef.current) {
+          const v = proxy.current.val;
+          displayRef.current.textContent = prefix + (decimals > 0 ? v.toFixed(decimals) : numFmt(v)) + suffix;
+        }
+      },
+    });
+  }, { scope: ref });
+
   return (
-    <div ref={ref} style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(20px)", transition: "opacity 0.6s ease, transform 0.6s ease" }}>
-      <div style={{ fontFamily: "'Kanit', sans-serif", fontWeight: 800, fontSize: "clamp(3.5rem, 9vw, 7rem)", lineHeight: 0.9, color: accent || "#fed107", letterSpacing: "-0.02em" }}>
-        {prefix}{display}{suffix}
+    <div ref={ref} style={{ opacity: 0 }}>
+      <div ref={displayRef} style={{ fontFamily: "'Kanit', sans-serif", fontWeight: 800, fontSize: "clamp(3.5rem, 9vw, 7rem)", lineHeight: 0.9, color: accent || "#fed107", letterSpacing: "-0.02em" }}>
+        {prefix}{decimals > 0 ? (0).toFixed(decimals) : "0"}{suffix}
       </div>
       <div style={{ fontFamily: "'Kanit', sans-serif", fontWeight: 600, fontSize: "clamp(0.78rem, 2vw, 0.95rem)", color: "rgba(223,235,247,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginTop: "0.6rem" }}>
         {label}
@@ -175,12 +161,21 @@ function AnimStat({ prefix = "", value, suffix = "", decimals = 0, label, accent
 
 // ─── Blackout visual ─────────────────────────────────────────────────────────
 function BlackoutVisual() {
-  const [ref, inView] = useInView(0.2);
+  const ref = useRef(null);
   const bars = [
     { label: "Total PL games", value: 380, max: 380, color: "rgba(223,235,247,0.2)" },
     { label: "Streamable (Sky + TNT)", value: 267, max: 380, color: "#fed107", emphasis: true },
     { label: "3pm blackouts", value: 113, max: 380, color: "#e03535" },
   ];
+
+  useGSAP(() => {
+    gsap.from(ref.current.querySelectorAll(".bv-fill"), {
+      scaleX: 0, duration: 1.5, ease: "power2.out", stagger: 0.18,
+      transformOrigin: "left center",
+      scrollTrigger: { trigger: ref.current, start: "top 82%", once: true },
+    });
+  }, { scope: ref });
+
   return (
     <div ref={ref} style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
       {bars.map((bar, i) => (
@@ -190,7 +185,7 @@ function BlackoutVisual() {
             <span style={{ color: bar.emphasis ? "#fed107" : (bar.color === "rgba(223,235,247,0.2)" ? "rgba(223,235,247,0.4)" : bar.color), textShadow: bar.emphasis ? "0 0 12px rgba(254,209,7,0.35)" : "none" }}>{bar.value}</span>
           </div>
           <div style={{ height: bar.emphasis ? "14px" : "8px", background: "rgba(223,235,247,0.06)", borderRadius: "2px", overflow: "hidden", border: bar.emphasis ? "1px solid rgba(254,209,7,0.25)" : "none" }}>
-            <div style={{ height: "100%", borderRadius: "2px", background: bar.color, width: inView ? `${(bar.value / bar.max) * 100}%` : "0%", transition: `width 1.5s cubic-bezier(0.25,1,0.5,1) ${i * 0.18}s`, boxShadow: bar.emphasis ? "0 0 20px rgba(254,209,7,0.45)" : "none" }} />
+            <div className="bv-fill" style={{ height: "100%", borderRadius: "2px", background: bar.color, width: `${(bar.value / bar.max) * 100}%`, boxShadow: bar.emphasis ? "0 0 20px rgba(254,209,7,0.45)" : "none" }} />
           </div>
         </div>
       ))}
@@ -216,12 +211,17 @@ function PintsComparison({ cpg, totalSpent, clubName }) {
   const pintsPerGame   = cpg / PINT_PRICE;
   const pintsTotal     = totalSpent / PINT_PRICE;
   const roundsForLads  = Math.floor(pintsTotal / 4);
-  const [ref, inView]  = useInView(0.2);
+  const ref            = useRef(null);
 
   const glasses = Math.min(Math.round(pintsPerGame), 20);
 
+  useGSAP(() => {
+    gsap.from(ref.current, { opacity: 0, y: 24, duration: 0.6, ease: "power2.out",
+      scrollTrigger: { trigger: ref.current, start: "top 85%", once: true } });
+  }, { scope: ref });
+
   return (
-    <div ref={ref} style={{ opacity: inView ? 1 : 0, transform: inView ? "none" : "translateY(24px)", transition: "opacity 0.6s ease, transform 0.6s ease", marginTop: "1.5rem" }}>
+    <div ref={ref} style={{ opacity: 0, marginTop: "1.5rem" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
         <div style={{ width: "2rem", height: "1.5px", background: "#fed107" }} />
@@ -691,6 +691,26 @@ export default function Landing() {
   const [mounted, setMounted]     = useState(false);
   const [scrolled, setScrolled]   = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const heroRef = useRef(null);
+
+  useGSAP(() => {
+    const tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+    tl.from(".hero-eyebrow", { opacity: 0, y: 20, duration: 0.6 })
+      .from(".hero-hl .line", { opacity: 0, y: 30, duration: 0.55, stagger: 0.12 }, "-=0.3")
+      .from(".hero-sub", { opacity: 0, y: 18, duration: 0.55 }, "-=0.25")
+      .from(".hero-actions", { opacity: 0, y: 16, duration: 0.5 }, "-=0.25")
+      .from(".hero-signers", { opacity: 0, duration: 0.4 }, "-=0.2")
+      .from(".hero-badge", { opacity: 0, scale: 0.82, duration: 0.8, ease: "back.out(1.7)" }, "<0.2");
+
+    ScrollTrigger.batch(".qcard", {
+      onEnter: els => gsap.from(els, { opacity: 0, x: -24, duration: 0.5, stagger: 0.1, ease: "power2.out" }),
+      once: true, start: "top 87%",
+    });
+    ScrollTrigger.batch(".how-step", {
+      onEnter: els => gsap.from(els, { opacity: 0, y: 28, duration: 0.5, stagger: 0.12, ease: "power2.out" }),
+      once: true, start: "top 87%",
+    });
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -991,18 +1011,18 @@ export default function Landing() {
         <div className="hero-grid" />
         <div className="hero-inner">
           <div>
-            <div className={mounted ? "hero-eyebrow fade-up d1" : "hero-eyebrow"}>A campaign by football fans, for football fans</div>
+            <div className="hero-eyebrow">A campaign by football fans, for football fans</div>
             <h1 className="hero-hl">
-              <span className={mounted ? "line fade-up d2" : "line"}>Your club.</span>
-              <span className={mounted ? "line fade-up d3" : "line"}>Your <span className="strike">right</span>.</span>
-              <span className={mounted ? "line fade-up d4" : "line"}><span className="accent">Their</span> profit.</span>
+              <span className="line">Your club.</span>
+              <span className="line">Your <span className="strike">right</span>.</span>
+              <span className="line"><span className="accent">Their</span> profit.</span>
             </h1>
-            <p className={mounted ? "hero-sub fade-up d4" : "hero-sub"}>UK football fans pay over <strong>£800 a season</strong> across three subscriptions — only to find a third of their club's games are still blacked out. The leagues profit. The broadcasters profit. Fans get the bill.</p>
-            <div className={mounted ? "hero-actions fade-up d5" : "hero-actions"}>
+            <p className="hero-sub">UK football fans pay over <strong>£800 a season</strong> across three subscriptions — only to find a third of their club's games are still blacked out. The leagues profit. The broadcasters profit. Fans get the bill.</p>
+            <div className="hero-actions">
               <a href="#petition" className="btn-y">Sign the Petition</a>
               <a href="#calculator" className="btn-o">Calculate Your Cost</a>
             </div>
-            <div className={mounted ? "hero-signers fade-up d6" : "hero-signers"} suppressHydrationWarning>
+            <div className="hero-signers" suppressHydrationWarning>
               <span suppressHydrationWarning>{numFmt(signers)}</span> fans have already signed
             </div>
           </div>

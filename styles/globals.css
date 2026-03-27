@@ -35,7 +35,23 @@ body {
   0%, 100% { text-shadow: 0 0 28px rgba(255,215,0,0.22); }
   50%       { text-shadow: 0 0 55px rgba(255,215,0,0.55), 0 0 100px rgba(255,215,0,0.12); }
 }
-@keyframes badgeFloat {
-  0%, 100% { transform: translateY(0);    }
-  50%       { transform: translateY(-8px); }
+
+/* Ticker: seamless loop; slower when user prefers reduced motion */
+.ticker-track {
+  animation: tick 28s linear infinite;
+}
+
+.petition-count-glow {
+  animation: countGlow 3.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .ticker-track {
+    animation-duration: 90s;
+  }
+  .petition-count-glow {
+    animation: none;
+    text-shadow: 0 0 28px rgba(254,209,7,0.22);
+  }
 }

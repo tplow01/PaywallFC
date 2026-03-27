@@ -81,72 +81,6 @@ function getResult(match, teamId) {
   return { score, result: diff > 0 ? "W" : diff < 0 ? "L" : "D" };
 }
 
-// ─── Animated stat ────────────────────────────────────────────────────────────
-function AnimStat({ prefix = "", value, suffix = "", decimals = 0, label, accent = "#fed107" }) {
-  const ref        = useRef(null);
-  const displayRef = useRef(null);
-  const proxy      = useRef({ val: 0 });
-
-  useGSAP(() => {
-    // Set initial hidden state via GSAP (runs before paint via useLayoutEffect)
-    gsap.set(ref.current, { opacity: 0, y: 20 });
-    const trigger = { trigger: ref.current, start: "top 85%", once: true };
-    gsap.to(ref.current, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out", scrollTrigger: trigger });
-    gsap.to(proxy.current, {
-      val: value, duration: 2, ease: "power2.out", scrollTrigger: trigger,
-      onUpdate() {
-        if (displayRef.current) {
-          const v = proxy.current.val;
-          displayRef.current.textContent = prefix + (decimals > 0 ? v.toFixed(decimals) : numFmt(v)) + suffix;
-        }
-      },
-    });
-  }, { scope: ref });
-
-  return (
-    <div ref={ref} className="flex flex-col gap-4">
-      <div ref={displayRef} className="font-display font-black leading-none" style={{ fontSize: "clamp(3.5rem,8vw,7rem)", color: accent, letterSpacing: "-0.02em" }}>
-        {prefix}{decimals > 0 ? (0).toFixed(decimals) : "0"}{suffix}
-      </div>
-      <div className="font-display font-semibold text-[15px] tracking-[0.15em] uppercase" style={{ color: "rgba(223,235,247,0.4)" }}>{label}</div>
-    </div>
-  );
-}
-
-// ─── Blackout bars ────────────────────────────────────────────────────────────
-function BlackoutBars() {
-  const ref  = useRef(null);
-  const bars = [
-    { label: "Total PL games",       value: 380, max: 380, color: "rgba(255,255,255,0.15)" },
-    { label: "Streamable (Sky+TNT)", value: 267, max: 380, color: "#FFD700", emphasis: true },
-    { label: "3pm blackouts",        value: 113, max: 380, color: "#e03535" },
-  ];
-
-  useGSAP(() => {
-    gsap.from(ref.current.querySelectorAll(".bv-fill"), {
-      scaleX: 0, duration: 1.5, ease: "power2.out", stagger: 0.18,
-      transformOrigin: "left center",
-      scrollTrigger: { trigger: ref.current, start: "top 82%", once: true },
-    });
-  }, { scope: ref });
-
-  return (
-    <div ref={ref} className="flex flex-col gap-4">
-      {bars.map((bar, i) => (
-        <div key={i}>
-          <div className="flex justify-between mb-2">
-            <span className={`font-display font-bold text-xs tracking-widest uppercase ${bar.emphasis ? "text-white" : "text-brand-muted"}`}>{bar.label}</span>
-            <span className="font-display font-bold text-xs" style={{ color: bar.color }}>{bar.value}</span>
-          </div>
-          <div className={`rounded-sm overflow-hidden bg-brand-border ${bar.emphasis ? "h-3" : "h-1.5"}`}>
-            <div className="bv-fill h-full rounded-sm" style={{ width: `${(bar.value / bar.max) * 100}%`, background: bar.color, boxShadow: bar.emphasis ? "0 0 16px rgba(255,215,0,0.4)" : "none" }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ─── Popup overlay ────────────────────────────────────────────────────────────
 function PopupOverlay({ popup, onDismiss }) {
   const [visible, setVisible] = useState(false);
@@ -345,7 +279,7 @@ function CalculatorSection() {
           </div>
           <div className="col-span-12 lg:col-span-7 flex items-end">
             <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-              Select your club to see this season's cost breakdown, your personal blackout count, and exactly how much each game is costing you.
+              Choose your club. We pull this season&apos;s fixtures, pro-rate Sky, TNT, and the TV licence, and tally your personal 3pm blackouts — then show what each <strong className="font-semibold text-brand-text/90">watchable</strong> game is costing you after the blocks.
             </p>
           </div>
         </div>
@@ -357,7 +291,9 @@ function CalculatorSection() {
 
             {/* Club picker */}
             <div className="relative mb-6">
+              <label htmlFor="club-select" className="sr-only">Premier League club</label>
               <select
+                id="club-select"
                 value={clubKey}
                 onChange={e => setClubKey(e.target.value)}
                 className="w-full appearance-none cursor-pointer outline-none font-display font-bold text-[17.6px]"
@@ -371,7 +307,7 @@ function CalculatorSection() {
                 <option value="">— Select your club —</option>
                 {CLUBS.map(c => <option key={c.key} value={c.key}>{c.name}</option>)}
               </select>
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-brand-yellow text-xs pointer-events-none">▼</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-brand-yellow text-xs pointer-events-none" aria-hidden="true">▼</span>
             </div>
 
             {/* Stat cards — shown once matches are loaded */}
@@ -436,8 +372,10 @@ function CalculatorSection() {
             {/* Empty state */}
             {!club && (
               <div className="p-12 text-center" style={{ background: "linear-gradient(180deg, rgba(254,209,7,0.08) 0%, rgba(254,209,7,0.02) 100%)", border: "1px solid rgba(254,209,7,0.2)" }}>
-                <div className="font-display font-bold text-xs tracking-[2.4px] uppercase text-center mb-2" style={{ color: "rgba(254,209,7,0.75)" }}>Interactive calculator</div>
-                <div className="font-display font-extrabold text-[16.8px] tracking-[1px] uppercase text-center text-brand-text">Select a club above to trigger your live cost breakdown</div>
+                <div className="font-display font-bold text-xs tracking-[2.4px] uppercase text-center mb-2" style={{ color: "rgba(254,209,7,0.75)" }}>Your receipt, line by line</div>
+                <div className="font-display font-extrabold text-[16.8px] tracking-[1px] uppercase text-center text-brand-text leading-snug max-w-md mx-auto">
+                  Pick a club — spend so far, blackouts, and cost per game you could actually watch
+                </div>
               </div>
             )}
 
@@ -501,6 +439,7 @@ export default function Landing() {
   const [email, setEmail]         = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName]   = useState("");
+  const [clubSupport, setClubSupport] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [signers, setSigners]     = useState(4261);
   const [scrolled, setScrolled]   = useState(false);
@@ -526,7 +465,10 @@ export default function Landing() {
     <>
       <Head>
         <title>Paywall FC — Your Club. Their Profit.</title>
-        <meta name="description" content="UK football fans are being priced out of watching their own clubs. Join the campaign." />
+        <meta name="description" content="UK fans pay world-leading prices and still miss a third of the PL on TV. Fair access and fan voice before the 2029 broadcast deal — add your name." />
+        <meta property="og:title" content="Paywall FC — Your Club. Their Profit." />
+        <meta property="og:description" content="Fair access to every game. End the 3pm blackout. Fans at the table before the 2029 rights deal." />
+        <meta name="twitter:card" content="summary" />
       </Head>
 
       {/* ── NAV ── */}
@@ -538,8 +480,8 @@ export default function Landing() {
         <div className="max-w-[1440px] mx-auto px-6 h-[60px] flex items-center justify-between gap-6">
 
           {/* Badge only */}
-          <a href="#" className="shrink-0">
-            <img src="/badge.png" alt="Paywall FC" className="w-9 h-9 object-contain" />
+          <a href="/" className="shrink-0" aria-label="Paywall FC — home">
+            <img src="/badge.png" alt="" className="w-9 h-9 object-contain" />
           </a>
 
           {/* Right: nav links + CTA */}
@@ -572,6 +514,9 @@ export default function Landing() {
                 className="block font-display font-semibold text-sm tracking-widest uppercase px-6 py-3 border-b transition-colors hover:text-brand-yellow"
                 style={{ color: "rgba(223,235,247,0.5)", borderColor: "rgba(223,235,247,0.07)" }}>{label}</a>
             ))}
+            <a href="#petition" onClick={() => setMobileOpen(false)}
+              className="block font-display font-black text-sm tracking-widest uppercase px-6 py-4 text-center"
+              style={{ background: "#fed107", color: "#121212" }}>Sign the Petition</a>
           </div>
         )}
       </header>
@@ -580,14 +525,27 @@ export default function Landing() {
       <section className="border-b" style={{ borderColor: "rgba(223,235,247,0.07)" }}>
         <div className="max-w-[1440px] mx-auto px-6 py-16 pb-10 grid grid-cols-12 gap-6">
           <div className="col-span-12">
-            <div className="font-display font-semibold text-xs tracking-[0.3em] uppercase mb-4 flex items-center gap-2"
-              style={{ color: "#e03535" }}>
-              <div className="w-2 h-2 rounded-full" style={{ background: "#e03535", animation: "livePulse 1.4s ease-in-out infinite" }} />
-              The Experience — scroll into view to start
+            <h1 className="font-display font-black uppercase text-brand-text mb-4" style={{ fontSize: "clamp(2.8rem,6vw,72px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
+              Your Club.<br />Their Profit.
+            </h1>
+            <p className="text-[16px] leading-[28px] mb-8 max-w-2xl" style={{ color: "rgba(223,235,247,0.55)" }}>
+              England is one of the most expensive places on earth to follow your club — and you still miss roughly a third of the Premier League on legal TV.{" "}
+              <span className="text-brand-text/90">Paywall FC</span> exists to change that before the{" "}
+              <strong className="font-semibold text-brand-text">2029</strong> broadcast deal sets the next decade of prices.
+            </p>
+            <div className="mb-4">
+              <div className="font-display font-semibold text-xs tracking-[0.3em] uppercase flex items-center gap-2"
+                style={{ color: "#e03535" }}>
+                <div className="w-2 h-2 rounded-full" aria-hidden="true" style={{ background: "#e03535", animation: "livePulse 1.4s ease-in-out infinite" }} />
+                The Experience
+              </div>
+              <p className="font-display text-[10px] tracking-[0.22em] uppercase mt-2 max-w-xl" style={{ color: "rgba(223,235,247,0.28)" }}>
+                Simulated match night — paywalls, blackouts, full-screen price tags. Not highlights. Interruptions.
+              </p>
             </div>
             <VideoSection />
-            <p className="font-display text-xs tracking-widest mt-3" style={{ color: "rgba(223,235,247,0.2)" }}>
-              Popups appear automatically · This is what watching football feels like in 2026
+            <p className="font-display text-xs tracking-widest mt-3 max-w-2xl" style={{ color: "rgba(223,235,247,0.28)" }}>
+              Plays when this panel enters view · If this felt familiar, scroll — your own numbers are next.
             </p>
           </div>
         </div>
@@ -595,10 +553,18 @@ export default function Landing() {
 
       {/* ── TICKER ── */}
       <div className="overflow-hidden py-[14px]" style={{ background: "linear-gradient(90deg, #fed107, #ffd42a)" }}>
-        <div className="flex whitespace-nowrap" style={{ animation: "tick 28s linear infinite" }}>
+        <div className="ticker-track flex whitespace-nowrap">
           {[...Array(2)].map((_, i) => (
             <div key={i} className="flex">
-              {["Sky Sports: £34.99/mo |","TNT Sports: £30.99/mo |","TV Licence: £14.54/mo |","Total: £775/season |","113 Premier League games blacked out |","30% of the season unwatchable"].map((item, j) => (
+              {[
+                "Sky £34.99/mo ·",
+                "TNT £30.99/mo ·",
+                "TV licence £14.54/mo ·",
+                "~£775/season — PL only ·",
+                "113 games blacked out every season ·",
+                "~30% of the season legally unwatchable ·",
+                "2029 rights deal — fans need a seat at the table ·",
+              ].map((item, j) => (
                 <span key={j} className="font-display font-extrabold text-[15px] tracking-[2.1px] uppercase px-9" style={{ color: "#121212" }}>
                   {item}
                 </span>
@@ -625,7 +591,7 @@ export default function Landing() {
             </div>
             <div className="col-span-12 lg:col-span-7 flex items-end">
               <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-                Every number in the calculator above covers the Premier League alone. Millions of English fans don't stop there — the Champions League, La Liga, Serie A, Ligue 1. Each competition sits behind a different paywall. Add them up and see what this sport is really costing you.
+                The calculator is Premier League only. Most of us don&apos;t stop there — European nights, other leagues, another app each time. The ladder below is what &quot;I just want to watch the football&quot; actually costs when every competition has its own gate.
               </p>
             </div>
           </div>
@@ -659,12 +625,20 @@ export default function Landing() {
             </div>
           </div>
 
-          {/* Stats — the numbers in full */}
+          {/* Piracy callout */}
           <div className="grid grid-cols-12 gap-6" style={{ borderTop: "1px solid rgba(223,235,247,0.07)", paddingTop: "4rem" }}>
-            <div className="col-span-6 md:col-span-3 stat-card"><AnimStat prefix="£" value={775} label="PL only — per season" accent="#dfebf7" /></div>
-            <div className="col-span-6 md:col-span-3 stat-card"><AnimStat value={113} label="Games blacked out" accent="#e03535" /></div>
-            <div className="col-span-6 md:col-span-3 stat-card"><AnimStat value={30} suffix="%" label="Of the season unwatchable" accent="#e03535" /></div>
-            <div className="col-span-6 md:col-span-3 stat-card"><AnimStat prefix="~£" value={1697} label="To watch all football" accent="#fed107" /></div>
+            <div className="col-span-12 md:col-span-6 p-8 flex flex-col gap-3" style={{ background: "rgba(224,53,53,0.04)", border: "1px solid rgba(224,53,53,0.14)" }}>
+              <div className="font-display font-black" style={{ fontSize: "clamp(3rem,7vw,80px)", color: "#e03535", lineHeight: "1" }}>5 million</div>
+              <p className="text-[15px] leading-[26px]" style={{ color: "rgba(223,235,247,0.55)" }}>
+                About five million UK adults stream illegally — not out of contempt for the law, but because the legal stack costs a fortune and still doesn&apos;t show the full season. That&apos;s not moral failure; it&apos;s a broken market.
+              </p>
+            </div>
+            <div className="col-span-12 md:col-span-6 p-8 flex flex-col gap-3" style={{ background: "rgba(254,209,7,0.03)", border: "1px solid rgba(254,209,7,0.12)" }}>
+              <div className="font-display font-black" style={{ fontSize: "clamp(2rem,4vw,48px)", color: "#fed107", lineHeight: "1.1" }}>9% of the adult population</div>
+              <p className="text-[15px] leading-[26px]" style={{ color: "rgba(223,235,247,0.55)" }}>
+                Nearly one in ten adults — not a fringe, not &quot;young lads with Kodi.&quot; When the honest option is this broken, the headline number stops being shocking and starts being inevitable.
+              </p>
+            </div>
           </div>
 
         </div>
@@ -677,45 +651,30 @@ export default function Landing() {
           {/* ── Left: full narrative ── */}
           <div className="col-span-12 md:col-span-5 flex flex-col gap-8">
 
-            {/* Problem block */}
+            {/* Problem block — merged */}
             <div>
               <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase mb-4" style={{ color: "#e03535" }}>The Problem</div>
               <h2 className="font-display font-black uppercase mb-5 text-brand-text" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-                Fans silenced<br />by their own<br />wallets.
+                Paying full price.<br />Watching half<br />the game.
               </h2>
               <div className="flex flex-col gap-5 text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-                <p>There was a time when you could watch your club on a single channel. That era is gone. Premier League rights have been deliberately fragmented across Sky, TNT, and the BBC —{" "}
-                  <strong className="font-semibold text-brand-text">forcing fans to pay for all three or miss out.</strong>
+                <p>Premier League rights were split across Sky and TNT deliberately — not because two platforms serve fans better than one, but because the auction generates more money that way. To watch your club every week, you pay for both or you miss out.</p>
+                <p>Then there's the blackout. A rule written in{" "}
+                  <strong className="font-semibold text-brand-text">1960</strong>
+                  {" "}— before colour television, before satellite, before the internet existed — bans any live UK broadcast between 2:45pm and 5:15pm on Saturdays. That means{" "}
+                  <strong className="font-semibold text-brand-text">113 Premier League games per season</strong>
+                  {" "}are legally unwatchable. Pay for everything and still miss the biggest match of your team's month.
                 </p>
-                <p>Leagues and broadcasters call it{" "}
-                  <strong className="font-semibold text-brand-text">"protecting the grassroots game."</strong>{" "}
-                  Fans call it what it is: a cartel protecting profit.
-                </p>
+                <p>The UK is the only major European country still applying this rule. Fans don&apos;t call it heritage — they call it a tax on loyalty.</p>
               </div>
             </div>
 
-            {/* Divider */}
-            <div style={{ height: "1px", background: "rgba(224,53,53,0.2)" }} />
-
-            {/* Blackout block */}
-            <div>
-              <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase mb-4" style={{ color: "#e03535" }}>The 3pm Blackout</div>
-              <h3 className="font-display font-black uppercase mb-5 text-brand-text" style={{ fontSize: "clamp(1.8rem,3.5vw,40px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-                Pay for everything.<br />Watch less.
-              </h3>
-              <div className="flex flex-col gap-4 text-[15.5px] leading-[28px] mb-6" style={{ color: "rgba(223,235,247,0.6)" }}>
-                <p>Under UK broadcasting law, no live football can be shown between 2:45pm and 5:15pm on Saturdays. The rule dates back to 1960.</p>
-                <p>In 2025/26, it means{" "}
-                  <strong className="font-semibold text-brand-text">113 Premier League games per season</strong>
-                  {" "}are completely unwatchable — regardless of how much you've paid.
-                </p>
-              </div>
-              <div className="p-5" style={{ background: "rgba(224,53,53,0.05)", border: "1px solid rgba(224,53,53,0.2)" }}>
-                <div className="font-display font-extrabold text-[11.5px] tracking-[1.9px] uppercase mb-2" style={{ color: "#e03535" }}>The rule, verbatim</div>
-                <p className="text-[13.5px] leading-[23px]" style={{ color: "rgba(223,235,247,0.45)" }}>
-                  "No live broadcast coverage of any association football match in the United Kingdom may commence between 14:45 and 17:15 on a Saturday." — UEFA Article 48, UEFA Statutes
-                </p>
-              </div>
+            {/* Verbatim rule */}
+            <div className="p-5" style={{ background: "rgba(224,53,53,0.05)", border: "1px solid rgba(224,53,53,0.2)" }}>
+              <div className="font-display font-extrabold text-[11.5px] tracking-[1.9px] uppercase mb-2" style={{ color: "#e03535" }}>The rule, verbatim</div>
+              <p className="text-[13.5px] leading-[23px]" style={{ color: "rgba(223,235,247,0.45)" }}>
+                "No live broadcast coverage of any association football match in the United Kingdom may commence between 14:45 and 17:15 on a Saturday." — UEFA Article 48, UEFA Statutes
+              </p>
             </div>
           </div>
 
@@ -741,14 +700,14 @@ export default function Landing() {
         <div className="max-w-[1440px] mx-auto px-6 py-24">
           <div className="grid grid-cols-12 gap-6 mb-12">
             <div className="col-span-12 lg:col-span-5">
-              <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4">You're not alone</div>
+              <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4">What we heard</div>
               <h2 className="font-display font-black uppercase text-brand-text" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-                Every fan<br />feels it.
+                Three fans.<br />Same story.
               </h2>
             </div>
             <div className="col-span-12 lg:col-span-7 flex items-end">
               <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-                This isn't one fan's frustration. Across every club, every age group, every income bracket — the story is the same. Paying more. Watching less. Running out of patience.
+                Three real conversations from early 2026 — not a focus group, not actors. Different clubs, same pattern: paying more, trusting less, running out of ways to pretend this is acceptable.
               </p>
             </div>
           </div>
@@ -783,7 +742,7 @@ export default function Landing() {
           </div>
           <div className="col-span-12 lg:col-span-7 lg:flex lg:items-end mb-16">
             <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-              Paywall FC is a campaign built to give a name, a badge, and a voice to every fan priced out of the game they love. We're not affiliated with any club or broadcaster. We track the real cost of watching football in England — and we're demanding change before the 2029 rights deal locks fans out for another decade.
+              Paywall FC is a badge for anyone priced out of their own game — independent of clubs and broadcasters. We publish the real cost of watching football in England and channel it into one demand: fan voice and fair access <strong className="font-semibold text-brand-text/85">before</strong> the 2029 deal is signed. No more decade-long lock-ins decided without the people who pay.
             </p>
           </div>
 
@@ -796,17 +755,17 @@ export default function Landing() {
               {
                 n: "01",
                 t: "One fair subscription",
-                d: "All Premier League matches — every single one — accessible through a single, affordable subscription. No more forcing fans to pay for multiple platforms just to watch their club.",
+                d: "Every Premier League match — home and away — in one affordable subscription. Stop forcing fans to buy two broadcasters 'just in case' their club lands on the other channel.",
               },
               {
                 n: "02",
                 t: "End the 3pm blackout",
-                d: "Abolish the 3pm Saturday blackout rule for streaming. It was designed for a world before the internet. It punishes the fans who pay the most and watch their club the least.",
+                d: "Scrap the Saturday streaming blackout. It was written for an era before broadband. Today it only guarantees that loyal subscribers still miss the kickoffs they pay for.",
               },
               {
                 n: "03",
                 t: "Fans at the table",
-                d: "Meaningful fan consultation before the 2029 Premier League broadcast rights deal is signed. The fans who fund this sport must have a say in how it's sold.",
+                d: "Binding fan consultation before the 2029 rights deal. The Football Governance Act 2025 put the Independent Football Regulator in law — the lever exists. We need it used while negotiators are still listening.",
               },
             ].map((s, i) => (
               <div key={i} className="stat-card col-span-12 md:col-span-4 relative py-10 px-10" style={{
@@ -838,14 +797,23 @@ export default function Landing() {
           </h2>
 
           <p className="text-[16px] leading-[28px] text-center mb-8" style={{ color: "rgba(223,235,247,0.5)" }}>
-            Demand the Premier League and broadcasters introduce fair, affordable access — and end the 3pm blackout rule for streaming fans.
+            Tell the league and broadcasters: fair access to every game, end the 3pm blackout for legal streaming, and put supporters in the room before the <strong className="font-semibold text-brand-text/80">2029</strong> deal is done — not after the ink is dry.
           </p>
 
+          {/* Sceptic acknowledgement */}
+          <div className="mb-10 p-6 text-left" style={{ border: "1px solid rgba(223,235,247,0.07)", background: "rgba(223,235,247,0.02)" }}>
+            <p className="text-[14.5px] leading-[26px] mb-3" style={{ color: "rgba(223,235,247,0.55)" }}>
+              Petitions fail when they stay invisible. You&apos;ve seen the template — sign, silence, shrug.
+            </p>
+            <p className="text-[14.5px] leading-[26px]" style={{ color: "rgba(223,235,247,0.55)" }}>
+              The Super League collapsed in 48 hours because fans made it costly to ignore. This count is meant the same way: a public figure negotiators and press can&apos;t hand-wave when the rights conversation goes loud. Add your name — make the next headline harder to bury.
+            </p>
+          </div>
+
           {/* Count */}
-          <div className="font-display font-black text-center mb-2" style={{
+          <div className="petition-count-glow font-display font-black text-center mb-2" style={{
             fontSize: "clamp(4rem,12vw,116px)", color: "#fed107",
             lineHeight: "1", textShadow: "0 0 28px rgba(254,209,7,0.22)",
-            animation: "countGlow 3.5s ease-in-out infinite",
           }} suppressHydrationWarning>{numFmt(signers)}</div>
           <div className="font-display font-bold text-[12.8px] tracking-[2.8px] uppercase mb-8" style={{ color: "rgba(223,235,247,0.42)" }} suppressHydrationWarning>fans have signed</div>
 
@@ -854,27 +822,43 @@ export default function Landing() {
             border: "1px solid rgba(254,209,7,0.25)",
             color: "rgba(254,209,7,0.85)",
           }}>
-            Momentum is building every day
+            Public count · Private inbox — every name adds leverage
           </div>
 
           {submitted ? (
             <div className="p-10" style={{ border: "1px solid rgba(254,209,7,0.2)", background: "rgba(254,209,7,0.05)" }}>
               <img src="/badge.png" alt="" className="w-16 h-16 object-contain mx-auto mb-4" style={{ filter: "drop-shadow(0 0 12px rgba(254,209,7,0.35))" }} />
               <div className="font-display font-black text-brand-yellow text-2xl uppercase mb-2">You're in, {firstName}.</div>
-              <div className="text-sm leading-relaxed" style={{ color: "rgba(223,235,247,0.5)" }}>Share the campaign so others can add their name. Together, we're impossible to ignore.</div>
+              <div className="text-sm leading-relaxed" style={{ color: "rgba(223,235,247,0.5)" }}>Share the link — the 2029 deal will be fought in public as much as in boardrooms. Make sure they see the number.</div>
             </div>
           ) : (
             <form className="flex flex-col gap-[10px]" onSubmit={handleSubmit}>
               <div className="grid grid-cols-2 gap-[10px]">
-                <input className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
-                  type="text" placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} required />
-                <input className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
-                  type="text" placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} />
+                <div>
+                  <label htmlFor="petition-firstname" className="sr-only">First name (required)</label>
+                  <input id="petition-firstname" className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
+                    type="text" name="firstName" autoComplete="given-name" placeholder="First name"
+                    value={firstName} onChange={e => setFirstName(e.target.value)} required aria-required="true" />
+                </div>
+                <div>
+                  <label htmlFor="petition-lastname" className="sr-only">Last name (optional)</label>
+                  <input id="petition-lastname" className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
+                    type="text" name="lastName" autoComplete="family-name" placeholder="Last name (optional)"
+                    value={lastName} onChange={e => setLastName(e.target.value)} />
+                </div>
               </div>
-              <input className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
-                type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} required />
-              <input className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
-                type="text" placeholder="Club you support (optional)" />
+              <div>
+                <label htmlFor="petition-email" className="sr-only">Email address (required)</label>
+                <input id="petition-email" className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
+                  type="email" name="email" autoComplete="email" inputMode="email" placeholder="Email address"
+                  value={email} onChange={e => setEmail(e.target.value)} required aria-required="true" />
+              </div>
+              <div>
+                <label htmlFor="petition-club" className="sr-only">Club you support (optional)</label>
+                <input id="petition-club" className={INPUT_CLS} style={INPUT_STYLE} {...INPUT_FOCUS}
+                  type="text" name="club" autoComplete="organization" placeholder="Club you support (optional)"
+                  value={clubSupport} onChange={e => setClubSupport(e.target.value)} />
+              </div>
               <button type="submit" className="w-full py-[18px] font-display font-black text-[16.8px] tracking-[2.5px] uppercase transition-opacity hover:opacity-85"
                 style={{ background: "#fed107", color: "#121212" }}>
                 Sign the Petition

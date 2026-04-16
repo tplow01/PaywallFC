@@ -36,9 +36,13 @@ body {
   50%       { text-shadow: 0 0 55px rgba(255,215,0,0.55), 0 0 100px rgba(255,215,0,0.12); }
 }
 
-/* Ticker: seamless loop; slower when user prefers reduced motion */
-.ticker-track {
-  animation: tick 60s linear infinite;
+/* Fast tactical motion strips */
+.money-strip-track {
+  animation: tick 14s linear infinite;
+}
+
+.nav-marquee-track {
+  animation: tick 10s linear infinite;
 }
 
 .petition-count-glow {
@@ -47,8 +51,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .ticker-track {
-    animation-duration: 90s;
+  .money-strip-track {
+    animation-duration: 24s;
+  }
+  .nav-marquee-track {
+    animation-duration: 18s;
   }
   .petition-count-glow {
     animation: none;

@@ -1,12 +1,8 @@
 import Head from "next/head";
 import { useState, useEffect, useRef, useCallback } from "react";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useGSAP } from "@gsap/react";
+import { motion, useSpring, useMotionValueEvent } from "framer-motion";
 import { CLUBS, getClubByKey } from "../lib/clubs";
 import { isBlackout, PRICES, SEASON_MONTHS, TV_LIC_SEASON, tvLicSoFar } from "../lib/calculator";
-
-gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 // Source: "The Price of Loyalty" research report (2025/26 season) — Premier League only
@@ -20,7 +16,7 @@ const TOTAL_SEASON = SKY_SEASON + TNT_SEASON + TV_LIC_SEASON; // £775.13
 const PINT_PRICE   = 6.20;
 
 // ─── Nav links ────────────────────────────────────────────────────────────────
-const NAV_LINKS = [["#calculator","Calculator"],["#costs","The Cost"],["#problem","The Problem"]];
+const NAV_LINKS = [["#calculator","Calculator"],["#reveal","The Reveal"],["#manifesto","Manifesto"]];
 
 // ─── Shared form input props ──────────────────────────────────────────────────
 const INPUT_CLS     = "w-full px-5 py-4 font-sans text-[14px] outline-none transition-colors placeholder-[rgba(223,235,247,0.22)] rounded-none";
@@ -29,29 +25,6 @@ const INPUT_FOCUS   = {
   onFocus: e => { e.target.style.borderColor = "#fed107"; },
   onBlur:  e => { e.target.style.borderColor = "rgba(223,235,247,0.1)"; },
 };
-
-// ─── Video interrupt popup sequence ──────────────────────────────────────────
-const POPUP_SEQUENCE = [
-  { id: 1,  delay: 1500,  duration: 3800, type: "subscribe", brand: "sky",
-    headline: "Subscribe to continue watching", sub: "From £34.99/month. No contract required.",
-    cta: "Start your subscription", dismiss: "Not now" },
-  { id: 2,  delay: 6800,  duration: 3200, type: "blackout",
-    headline: "Match unavailable",
-    sub: "This fixture falls within the 14:45–17:15 Saturday blackout window under UK broadcasting regulations." },
-  { id: 3,  delay: 11400, duration: 1800, type: "stat",  stat: "£349.90", label: "Sky Sports. Every season." },
-  { id: 4,  delay: 14400, duration: 3200, type: "subscribe", brand: "tnt",
-    headline: "This match is on TNT Sports", sub: "Add TNT Sports to your package from £30.99/month.",
-    cta: "Upgrade now", dismiss: "Cancel" },
-  { id: 5,  delay: 18800, duration: 1600, type: "stat",  stat: "113",     label: "Games blacked out. Every season." },
-  { id: 6,  delay: 21800, duration: 2800, type: "expired",
-    headline: "Your free trial has ended", sub: "Continue watching Premier League football from £34.99/month.",
-    cta: "Subscribe", dismiss: "Log out" },
-  { id: 7,  delay: 26000, duration: 1000, type: "stat",  stat: "£278.91", label: "TNT Sports. Per season." },
-  { id: 8,  delay: 27500, duration: 1000, type: "stat",  stat: "£146.32", label: "TV Licence. Still required." },
-  { id: 9,  delay: 29000, duration: 1000, type: "stat",  stat: "30%",     label: "Of games. Unwatchable." },
-  { id: 10, delay: 30500, duration: 6000, type: "final", stat: `£${TOTAL_SEASON.toFixed(2)}`,
-    label: "A year. Just to watch the Premier League.", cta: "Sign the petition" },
-];
 
 function numFmt(n) {
   return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -66,6 +39,43 @@ function calcSoFar(months) {
 }
 function fmt(n)  { return "£" + n.toFixed(2); }
 function fmtR(n) { return "£" + numFmt(n); }
+
+/** Spring “speedometer” total — digits follow `useSpring`; `animate` gives a short rev on each new target */
+function AnimatedTotal({ value, format = fmtR, className, highlight }) {
+  const spring = useSpring(value, { stiffness: 260, damping: 24, mass: 0.48 });
+  const [text, setText] = useState(() => format(value));
+
+  useEffect(() => {
+    spring.set(value);
+  }, [value, spring]);
+
+  useMotionValueEvent(spring, "change", (v) => {
+    setText(format(v));
+  });
+
+  const kick = highlight
+    ? {
+        scale: [1, 1.045, 1],
+        textShadow: [
+          "0 0 0 rgba(254,209,7,0)",
+          "0 0 20px rgba(254,209,7,0.4)",
+          "0 0 0 rgba(254,209,7,0)",
+        ],
+      }
+    : { scale: [1, 1.03, 1] };
+
+  return (
+    <motion.span
+      className={className}
+      style={{ fontVariantNumeric: "tabular-nums" }}
+      animate={kick}
+      transition={{ duration: 0.5, times: [0, 0.2, 1], ease: [0.22, 1, 0.36, 1] }}
+      key={String(value)}
+    >
+      {text}
+    </motion.span>
+  );
+}
 function formatDate(d) {
   return new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
@@ -81,131 +91,26 @@ function getResult(match, teamId) {
   return { score, result: diff > 0 ? "W" : diff < 0 ? "L" : "D" };
 }
 
-// ─── Popup overlay ────────────────────────────────────────────────────────────
-function PopupOverlay({ popup, onDismiss }) {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setVisible(true), 30); return () => clearTimeout(t); }, []);
-
-  const base = {
-    position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-    opacity: visible ? 1 : 0, transition: "opacity 0.18s ease",
-  };
-
-  if (popup.type === "stat") return (
-    <div style={{ ...base, background: "rgba(8,8,8,0.95)", flexDirection: "column", gap: "0.75rem" }}>
-      <div className="font-display font-black text-center" style={{ fontSize: "clamp(4rem,12vw,8rem)", color: "#FFD700", lineHeight: 0.88 }}>{popup.stat}</div>
-      <div className="font-display font-bold text-center text-brand-muted tracking-widest uppercase text-sm">{popup.label}</div>
-    </div>
-  );
-
-  if (popup.type === "final") return (
-    <div style={{ ...base, background: "rgba(8,8,8,0.97)", flexDirection: "column", gap: "1rem" }}>
-      <div className="font-display font-bold text-brand-muted tracking-widest uppercase text-xs">Total annual cost</div>
-      <div className="font-display font-black text-center" style={{ fontSize: "clamp(3.5rem,10vw,7rem)", color: "#FFD700", lineHeight: 0.88 }}>{popup.stat}</div>
-      <div className="font-display font-bold text-center text-white/50 tracking-widest uppercase text-sm max-w-xs" style={{ lineHeight: 1.5 }}>{popup.label}</div>
-      <a href="#petition" onClick={onDismiss} className="mt-3 font-display font-black text-sm tracking-widest uppercase px-8 py-3 bg-brand-yellow text-black inline-block">{popup.cta} →</a>
-    </div>
-  );
-
-  if (popup.type === "blackout") return (
-    <div style={{ ...base, backdropFilter: "blur(3px)", background: "rgba(0,0,0,0.5)" }}>
-      <div className="bg-brand-panel p-8 max-w-sm w-11/12 text-center" style={{ border: "1px solid rgba(223,235,247,0.12)" }}>
-        <div className="text-3xl mb-4" style={{ color: "#fed107" }}>⊘</div>
-        <div className="font-display font-black text-white uppercase text-xl mb-3">{popup.headline}</div>
-        <div className="text-sm text-white/40 leading-relaxed mb-6">{popup.sub}</div>
-        <button onClick={onDismiss} className="font-display font-bold text-xs tracking-widest uppercase px-6 py-2 border border-white/10 text-white/30 cursor-pointer bg-transparent">Close</button>
-      </div>
-    </div>
-  );
-
-  if (popup.type === "subscribe") {
-    const brandColor = popup.brand === "sky" ? "#0072c6" : "#f0a500";
-    const brandName  = popup.brand === "sky" ? "SKY SPORTS" : "TNT SPORTS";
-    return (
-      <div style={{ ...base, backdropFilter: "blur(4px)", background: "rgba(0,0,0,0.8)" }}>
-        <div className="max-w-sm w-11/12 overflow-hidden" style={{ border: `1px solid ${brandColor}35` }}>
-          <div className="font-display font-black text-xs tracking-widest uppercase text-white px-4 py-2" style={{ background: brandColor }}>{brandName}</div>
-          <div className="bg-brand-panel p-6">
-            <div className="font-display font-black text-white text-xl mb-2">{popup.headline}</div>
-            <div className="text-sm text-white/40 leading-relaxed mb-5">{popup.sub}</div>
-            <div className="flex gap-3">
-              <button className="flex-1 py-2.5 font-display font-black text-xs tracking-widest uppercase text-white border-none cursor-pointer" style={{ background: brandColor }}>{popup.cta}</button>
-              <button onClick={onDismiss} className="px-4 py-2.5 font-display text-xs text-white/30 cursor-pointer bg-transparent border border-white/10">{popup.dismiss}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (popup.type === "expired") return (
-    <div style={{ ...base, backdropFilter: "blur(5px)", background: "rgba(0,0,0,0.9)" }}>
-      <div className="bg-brand-panel border border-white/7 max-w-sm w-11/12 p-8 text-center">
-        <div className="font-display font-black text-white text-xl mb-2">{popup.headline}</div>
-        <div className="text-sm text-white/40 leading-relaxed mb-6">{popup.sub}</div>
-        <div className="flex gap-3">
-          <button className="flex-1 py-3 bg-white text-black font-display font-black text-xs tracking-widest uppercase border-none cursor-pointer">{popup.cta}</button>
-          <button onClick={onDismiss} className="flex-1 py-3 bg-transparent border border-white/10 text-white/30 font-display text-xs cursor-pointer">{popup.dismiss}</button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return null;
-}
-
 // ─── Video section ────────────────────────────────────────────────────────────
 function VideoSection() {
   const videoRef   = useRef(null);
-  const [popup, setPopup] = useState(null);
-  const [showPlayOverlay, setShowPlayOverlay] = useState(true);
-  const timers     = useRef([]);
-
-  const clearPopupTimers = useCallback(() => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-  }, []);
-
-  const schedulePopups = useCallback(() => {
-    clearPopupTimers();
-    POPUP_SEQUENCE.forEach(({ id, delay, duration, ...data }) => {
-      const t1 = setTimeout(() => setPopup({ id, ...data }), delay);
-      const t2 = setTimeout(() => setPopup(null), delay + duration);
-      timers.current.push(t1, t2);
-    });
-  }, [clearPopupTimers]);
-
-  const handlePlayClick = useCallback(() => {
-    setShowPlayOverlay(false);
-    schedulePopups();
-    const v = videoRef.current;
-    if (v) v.play().catch(() => {});
-  }, [schedulePopups]);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return undefined;
-    const onEnded = () => {
-      clearPopupTimers();
-      setPopup(null);
-      setShowPlayOverlay(true);
-      v.pause();
-      v.currentTime = 0;
-    };
-    v.addEventListener("ended", onEnded);
-    return () => {
-      v.removeEventListener("ended", onEnded);
-      clearPopupTimers();
-    };
-  }, [clearPopupTimers]);
+    v.play().catch(() => {});
+    return undefined;
+  }, []);
 
   return (
-    <div className="relative aspect-video bg-black overflow-hidden rounded-xl" style={{ border: "2px solid #fed107", boxShadow: "0 0 32px rgba(254,209,7,0.2), 0 0 64px rgba(254,209,7,0.06)" }}>
+    <div className="relative aspect-video bg-black overflow-hidden rounded-xl" style={{ border: "2px solid #fed107" }}>
       {/* Real video */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover"
         src="/Penalty2.mp4"
+        autoPlay
+        loop
         muted
         playsInline
         preload="auto"
@@ -214,34 +119,19 @@ function VideoSection() {
       {/* Scanlines */}
       <div className="absolute inset-0 pointer-events-none z-10" style={{ backgroundImage: "repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.04) 3px,rgba(0,0,0,0.04) 4px)" }} />
 
-      {/* Play / replay: black screen + picon until user starts playback */}
-      {showPlayOverlay && (
-        <button
-          type="button"
-          className="absolute inset-0 z-[15] flex cursor-pointer items-center justify-center bg-black border-0 p-0"
-          onClick={handlePlayClick}
-          aria-label="Play video"
-        >
-          <img src="/picon.png" alt="" className="w-24 h-24 sm:w-28 sm:h-28 object-contain" />
-        </button>
-      )}
-
-      {/* Popup layer */}
-      {popup && (
-        <div className="absolute inset-0 z-20">
-          <PopupOverlay key={popup.id} popup={popup} onDismiss={() => setPopup(null)} />
-        </div>
-      )}
     </div>
   );
 }
 
 // ─── Calculator section ───────────────────────────────────────────────────────
-function CalculatorSection() {
+function CalculatorSection({ onResultChange }) {
   const [clubKey, setClubKey] = useState("");
   const [matches, setMatches] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
+  const [includeSky, setIncludeSky] = useState(true);
+  const [includeTnt, setIncludeTnt] = useState(true);
+  const [includeTv, setIncludeTv]   = useState(true);
 
   const club = getClubByKey(clubKey);
 
@@ -249,9 +139,12 @@ function CalculatorSection() {
     setLoading(true); setError(null); setMatches(null);
     try {
       const res  = await fetch("/api/fixtures/" + id);
-      if (!res.ok) throw new Error("API error " + res.status);
-      const data = await res.json();
-      setMatches(data.matches || []);
+      const payload = await res.json();
+      if (!res.ok) {
+        const detail = payload?.details ? ` — ${payload.details}` : "";
+        throw new Error((payload?.error || ("API error " + res.status)) + detail);
+      }
+      setMatches(payload.matches || []);
     } catch (e) {
       setError(e.message);
     }
@@ -263,16 +156,24 @@ function CalculatorSection() {
     else { setMatches(null); setError(null); }
   }, [club, fetchMatches]);
 
-  const months   = monthsElapsed();
-  const soFar    = calcSoFar(months);
-  const skySoFar = SKY_MONTHLY * months;
-  const tntSoFar = TNT_MONTHLY * Math.max(0, months - 1); // TNT starts Sep (no TNT in Aug)
-  const tvSoFar  = soFar - skySoFar - tntSoFar;
+  const months    = monthsElapsed();
+  const soFarFull = calcSoFar(months);
+  const skySoFar  = SKY_MONTHLY * months;
+  const tntSoFar  = TNT_MONTHLY * Math.max(0, months - 1); // TNT starts Sep (no TNT in Aug)
+  const tvSoFar   = soFarFull - skySoFar - tntSoFar;
+  const soFar =
+    (includeSky ? skySoFar : 0) +
+    (includeTnt ? tntSoFar : 0) +
+    (includeTv ? tvSoFar : 0);
 
   const finished   = matches ? matches.filter(m => m.status === "FINISHED") : [];
   const blacked    = finished.filter(m => isBlackout(m.utcDate));
   const streamable = finished.length - blacked.length;
   const cpg        = streamable > 0 ? soFar / streamable : 0;
+
+  useEffect(() => {
+    onResultChange?.(Boolean(club && matches));
+  }, [club, matches, onResultChange]);
 
   return (
     <section id="calculator" style={{ borderTop: "1px solid rgba(223,235,247,0.07)" }}>
@@ -324,30 +225,44 @@ function CalculatorSection() {
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Spent so far",  value: fmtR(soFar),     sub: "Aug 2025 – now", highlight: true },
-                    { label: "Your blackouts", value: blacked.length,  sub: "games blocked" },
-                    { label: "Cost per game", value: fmt(cpg),         sub: `${streamable} streamable` },
+                    { label: "Spent so far", sub: "Aug 2025 – now", highlight: true, kind: "total" },
+                    { label: "Your blackouts", sub: "games blocked", highlight: false, kind: "int", value: blacked.length },
+                    { label: "Cost per game", sub: `${streamable} streamable`, highlight: false, kind: "cpg" },
                   ].map((s, i) => (
                     <div key={i} className={`p-4 border ${s.highlight ? "bg-brand-yellow/8 border-brand-yellow/20" : "bg-brand-panel border-brand-border"}`}>
                       <div className={`font-display font-semibold text-xs tracking-widest uppercase mb-2 ${s.highlight ? "text-brand-yellow/60" : "text-brand-muted"}`}>{s.label}</div>
-                      <div className={`font-display font-black text-2xl leading-none ${s.highlight ? "text-brand-yellow" : "text-brand-text"}`}>{s.value}</div>
+                      <div className={`font-display font-black text-2xl leading-none ${s.highlight ? "text-brand-yellow" : "text-brand-text"}`}>
+                        {s.kind === "total" && <AnimatedTotal value={soFar} highlight />}
+                        {s.kind === "int" && s.value}
+                        {s.kind === "cpg" && <AnimatedTotal value={cpg} format={fmt} highlight={false} />}
+                      </div>
                       <div className="text-xs mt-1" style={{ color: "rgba(223,235,247,0.3)" }}>{s.sub}</div>
                     </div>
                   ))}
                 </div>
 
                 <div className="bg-brand-panel border border-brand-border p-4 rounded-sm">
-                  <div className="font-display font-bold text-xs tracking-widest uppercase text-brand-muted mb-4">Spend by service</div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="font-display font-bold text-xs tracking-widest uppercase text-brand-muted mb-1">Spend by service</div>
+                  <p className="text-[11px] leading-snug mb-4" style={{ color: "rgba(223,235,247,0.28)" }}>Toggle what you pay for — your total revs to match.</p>
+                  <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: "Sky",     val: skySoFar, color: "#4a90d9" },
-                      { label: "TNT",     val: tntSoFar, color: "#f0a500" },
-                      { label: "Licence", val: tvSoFar,  color: "rgba(255,255,255,0.5)" },
-                    ].map(({ label, val, color }) => (
-                      <div key={label}>
-                        <div className="font-display font-bold text-xs tracking-widest uppercase text-brand-muted mb-1">{label}</div>
-                        <div className="font-display font-black text-xl" style={{ color }}>{fmtR(val)}</div>
-                      </div>
+                      { label: "Sky", val: skySoFar, color: "#4a90d9", on: includeSky, setOn: setIncludeSky },
+                      { label: "TNT", val: tntSoFar, color: "#f0a500", on: includeTnt, setOn: setIncludeTnt },
+                      { label: "Licence", val: tvSoFar, color: "rgba(255,255,255,0.5)", on: includeTv, setOn: setIncludeTv },
+                    ].map(({ label, val, color, on, setOn }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setOn(v => !v)}
+                        className={`text-left rounded-sm border p-3 transition-colors font-display focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-yellow/50 ${on ? "border-brand-border bg-black/20" : "border-brand-border/40 bg-black/40 opacity-50"}`}
+                      >
+                        <div className="font-bold text-[10px] tracking-widest uppercase text-brand-muted mb-1 flex items-center justify-between gap-1">
+                          <span>{label}</span>
+                          <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded" style={{ background: on ? "rgba(254,209,7,0.15)" : "rgba(255,255,255,0.06)", color: on ? "#fed107" : "rgba(223,235,247,0.35)" }}>{on ? "On" : "Off"}</span>
+                        </div>
+                        <div className="font-black text-lg leading-none tabular-nums" style={{ color }}>{fmtR(val)}</div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -453,13 +368,7 @@ export default function Landing() {
   const [signers, setSigners]     = useState(4261);
   const [scrolled, setScrolled]   = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useGSAP(() => {
-    ScrollTrigger.batch(".stat-card", {
-      onEnter: els => gsap.from(els, { opacity: 0, y: 24, duration: 0.5, stagger: 0.1, ease: "power2.out" }),
-      once: true, start: "top 87%",
-    });
-  }, []);
+  const [hasCalculatorResult, setHasCalculatorResult] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setSigners(s => s + Math.floor(Math.random() * 3)), 8000);
@@ -482,15 +391,15 @@ export default function Landing() {
 
       {/* ── NAV ── */}
       <header className="sticky top-0 z-50 transition-all" style={{
-        background: scrolled ? "rgba(17,16,17,0.98)" : "rgba(17,16,17,0.94)",
+        background: "#fed107",
         backdropFilter: "blur(20px)",
-        borderBottom: "1px solid rgba(223,235,247,0.07)",
+        borderBottom: "1px solid rgba(0,0,0,0.12)",
       }}>
-        <div className="max-w-[1440px] mx-auto px-6 h-[60px] flex items-center justify-between gap-6">
+        <div className="max-w-[1440px] mx-auto px-6 h-[72px] flex items-center justify-between gap-6">
 
           {/* Wordmark */}
           <a href="/" className="shrink-0" aria-label="Paywall FC — home">
-            <img src="/wordmark.png" alt="Paywall FC" className="h-8 w-auto object-contain" />
+            <img src="/badge.png" alt="Paywall FC logo" className="h-12 w-12 object-contain" />
           </a>
 
           {/* Right: nav links + CTA */}
@@ -499,33 +408,47 @@ export default function Landing() {
               {NAV_LINKS.map(([href, label]) => (
                 <a key={href} href={href}
                   className="font-display font-semibold text-[11px] tracking-[1.5px] uppercase px-4 py-2 transition-colors"
-                  style={{ color: "rgba(223,235,247,0.4)" }}
-                  onMouseEnter={e => e.target.style.color = "#fed107"}
-                  onMouseLeave={e => e.target.style.color = "rgba(223,235,247,0.4)"}
+                  style={{ color: "rgba(0,0,0,0.65)" }}
+                  onMouseEnter={e => e.target.style.color = "#111011"}
+                  onMouseLeave={e => e.target.style.color = "rgba(0,0,0,0.65)"}
                 >{label}</a>
               ))}
             </nav>
             <a href="#petition" className="shrink-0 font-display font-black text-[11px] tracking-[1.8px] uppercase px-5 py-2 transition-opacity hover:opacity-85"
-              style={{ background: "#fdd209", color: "#121212" }}>
+              style={{ background: "#121212", color: "#fed107" }}>
               Sign the Petition
             </a>
-            <button className="md:hidden font-display font-bold text-xs text-brand-yellow" onClick={() => setMobileOpen(o => !o)}>
+            <button className="md:hidden font-display font-bold text-xs text-black" onClick={() => setMobileOpen(o => !o)}>
               {mobileOpen ? "Close" : "Menu"}
             </button>
           </div>
         </div>
 
+        <div className="overflow-hidden border-t border-black/15 py-1.5">
+          <div className="nav-marquee-track flex whitespace-nowrap">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="flex">
+                {["ENOUGH IS ENOUGH", "STOP THE BLACKOUT", "FANS OVER PROFIT"].map((item, j) => (
+                  <span key={j} className="px-6 font-display font-black text-[11px] tracking-[2px] uppercase text-black">
+                    {item} •
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden border-t bg-brand-dark" style={{ borderColor: "rgba(223,235,247,0.07)" }}>
+          <div className="md:hidden border-t" style={{ borderColor: "rgba(0,0,0,0.12)", background: "#fed107" }}>
             {NAV_LINKS.map(([href, label]) => (
               <a key={href} href={href} onClick={() => setMobileOpen(false)}
                 className="block font-display font-semibold text-sm tracking-widest uppercase px-6 py-3 border-b transition-colors hover:text-brand-yellow"
-                style={{ color: "rgba(223,235,247,0.5)", borderColor: "rgba(223,235,247,0.07)" }}>{label}</a>
+                style={{ color: "rgba(0,0,0,0.75)", borderColor: "rgba(0,0,0,0.1)" }}>{label}</a>
             ))}
             <a href="#petition" onClick={() => setMobileOpen(false)}
               className="block font-display font-black text-sm tracking-widest uppercase px-6 py-4 text-center"
-              style={{ background: "#fed107", color: "#121212" }}>Sign the Petition</a>
+              style={{ background: "#121212", color: "#fed107" }}>Sign the Petition</a>
           </div>
         )}
       </header>
@@ -561,35 +484,6 @@ export default function Landing() {
               {/* Video player */}
               <VideoSection />
 
-              {/* Action buttons */}
-              <div className="rounded-xl p-4 sm:p-5" style={{ background: "#181820", border: "1px solid rgba(223,235,247,0.08)" }}>
-                <div className="font-display font-bold text-xs tracking-widest uppercase mb-3 text-center" style={{ color: "#fed107" }}>
-                  Quick Actions
-                </div>
-                <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3 sm:justify-center">
-                  <a href="#petition"
-                    className="col-span-2 sm:col-span-1 font-display font-black text-xs tracking-widest uppercase px-4 py-2.5 rounded-lg text-center transition-opacity hover:opacity-85"
-                    style={{ background: "#fed107", color: "#121212" }}>
-                    Sign the Petition
-                  </a>
-                  <a href="#calculator"
-                    className="font-display font-bold text-xs tracking-widest uppercase px-4 py-2.5 rounded-lg text-center"
-                    style={{ background: "#252530", color: "rgba(223,235,247,0.75)", border: "1px solid rgba(223,235,247,0.1)" }}>
-                    Calculate My Cost
-                  </a>
-                  <a href="#costs"
-                    className="font-display font-bold text-xs tracking-widest uppercase px-4 py-2.5 rounded-lg text-center"
-                    style={{ background: "#252530", color: "rgba(223,235,247,0.75)", border: "1px solid rgba(223,235,247,0.1)" }}>
-                    The Numbers
-                  </a>
-                  <a href="#problem"
-                    className="font-display font-bold text-xs tracking-widest uppercase px-4 py-2.5 rounded-lg text-center"
-                    style={{ background: "#252530", color: "rgba(223,235,247,0.75)", border: "1px solid rgba(223,235,247,0.1)" }}>
-                    The Problem
-                  </a>
-                </div>
-              </div>
-
             </div>
           </div>
         </div>
@@ -597,7 +491,7 @@ export default function Landing() {
 
       {/* ── TICKER ── */}
       <div className="overflow-hidden py-[14px]" style={{ background: "linear-gradient(90deg, #fed107, #ffd42a)" }}>
-        <div className="ticker-track flex whitespace-nowrap">
+        <div className="money-strip-track flex whitespace-nowrap">
           {[...Array(2)].map((_, i) => (
             <div key={i} className="flex">
               {[
@@ -619,116 +513,31 @@ export default function Landing() {
       </div>
 
       {/* ── CALCULATOR ── */}
-      <CalculatorSection />
+      <CalculatorSection onResultChange={setHasCalculatorResult} />
 
-      {/* ── THE COST OF FOOTBALL ── */}
-      <section id="costs" style={{ borderTop: "1px solid rgba(223,235,247,0.07)", borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
+      {/* ── THE REVEAL ── */}
+      <section id="reveal" style={{ borderTop: "1px solid rgba(223,235,247,0.07)", borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
         <div className="max-w-[1440px] mx-auto px-6 py-24">
-
-          {/* Header */}
-          <div className="grid grid-cols-12 gap-6 mb-16">
-            <div className="col-span-12 lg:col-span-5">
-              <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4">And that's only the Premier League</div>
-              <h2 className="font-display font-black uppercase text-brand-text" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-                £775.<br />And that's<br />just the start.
-              </h2>
-            </div>
-            <div className="col-span-12 lg:col-span-7 flex items-end">
-              <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-                The calculator is Premier League only. Most of us don&apos;t stop there — European nights, other leagues, another app each time. The ladder below is what &quot;I just want to watch the football&quot; actually costs when every competition has its own gate.
-              </p>
-            </div>
-          </div>
-
-          {/* Escalation ladder */}
-          <div className="grid grid-cols-12 gap-6 mb-16">
-            <div className="col-span-12 lg:col-span-8 lg:col-start-5 flex flex-col gap-0" style={{ border: "1px solid rgba(223,235,247,0.07)" }}>
-              {[
-                { label: "Premier League only",             services: "Sky Sports + TNT Sports + TV Licence",                                  annual: "£775",     color: "#dfebf7", accent: "rgba(223,235,247,0.04)", border: "rgba(223,235,247,0.07)", tag: null },
-                { label: "+ Champions League",              services: "TNT Sports CL package on top",                                          annual: "~£820",    color: "#fed107", accent: "rgba(254,209,7,0.03)",  border: "rgba(254,209,7,0.12)",  tag: null },
-                { label: "+ All major European football",   services: "DAZN (Serie A) + Premier Sports + Disney+ (La Liga) + Ligue 1+",         annual: "~£1,697",  color: "#e07c35", accent: "rgba(224,124,53,0.05)", border: "rgba(224,124,53,0.18)", tag: "Today" },
-                { label: "+ Paramount+ from 2027/28",       services: "Champions League moves exclusively to Paramount+ — another subscription", annual: "~£1,757+", color: "#e07c35", accent: "rgba(224,124,53,0.08)", border: "rgba(224,124,53,0.25)", tag: "Coming soon" },
-              ].map((tier, i) => (
-                <div key={i} className="px-6 py-5 flex items-center justify-between gap-4" style={{
-                  background: tier.accent,
-                  borderBottom: i < 3 ? `1px solid ${tier.border}` : "none",
-                }}>
-                  <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-display font-bold text-[15px]" style={{ color: tier.color }}>{tier.label}</span>
-                      {tier.tag && <span className="font-display font-black text-[9px] tracking-[1.5px] uppercase px-2 py-[2px]" style={{ background: tier.color, color: "#121212" }}>{tier.tag}</span>}
-                    </div>
-                    <div className="text-[12px] leading-[19px]" style={{ color: "rgba(223,235,247,0.32)" }}>{tier.services}</div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className="font-display font-black text-[26px] leading-none" style={{ color: tier.color }}>{tier.annual}</div>
-                    <div className="font-display text-[10px] tracking-[1px] uppercase mt-1" style={{ color: "rgba(223,235,247,0.28)" }}>per season</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Piracy callout */}
-          <div className="grid grid-cols-12 gap-6" style={{ borderTop: "1px solid rgba(223,235,247,0.07)", paddingTop: "4rem" }}>
-            <div className="col-span-12 md:col-span-6 p-8 flex flex-col gap-3" style={{ background: "rgba(254,209,7,0.03)", border: "1px solid rgba(254,209,7,0.12)" }}>
-              <div className="font-display font-black" style={{ fontSize: "clamp(3rem,7vw,80px)", color: "#fed107", lineHeight: "1" }}>5 million</div>
-              <p className="text-[15px] leading-[26px]" style={{ color: "rgba(223,235,247,0.55)" }}>
-                About five million UK adults stream illegally — not out of contempt for the law, but because the legal stack costs a fortune and still doesn&apos;t show the full season. That&apos;s not moral failure; it&apos;s a broken market.
-              </p>
-            </div>
-            <div className="col-span-12 md:col-span-6 p-8 flex flex-col gap-3" style={{ background: "rgba(254,209,7,0.03)", border: "1px solid rgba(254,209,7,0.12)" }}>
-              <div className="font-display font-black" style={{ fontSize: "clamp(2rem,4vw,48px)", color: "#fed107", lineHeight: "1.1" }}>9% of the adult population</div>
-              <p className="text-[15px] leading-[26px]" style={{ color: "rgba(223,235,247,0.55)" }}>
-                Nearly one in ten adults — not a fringe, not &quot;young lads with Kodi.&quot; When the honest option is this broken, the headline number stops being shocking and starts being inevitable.
-              </p>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ── PROBLEM + BLACKOUT (merged) ── */}
-      <section id="problem" style={{ borderTop: "1px solid rgba(223,235,247,0.07)", borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
-        <div className="max-w-[1440px] mx-auto px-6 py-24 grid grid-cols-12 gap-6 items-start">
-
-          {/* ── Left: full narrative ── */}
-          <div className="col-span-12 md:col-span-5 flex flex-col gap-8">
-
-            {/* Problem block — merged */}
-            <div>
-              <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase mb-4 text-brand-yellow">The Problem</div>
-              <h2 className="font-display font-black uppercase mb-5 text-brand-text" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-                Paying full price.<br />Watching half<br />the game.
-              </h2>
-              <div className="flex flex-col gap-5 text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-                <p>Premier League rights are split across Sky and TNT because the auction earns more that way — not because two subscriptions serve fans better. To follow your club every week, you pay for both or you miss out.</p>
-                <p>The Saturday blackout still bans live UK broadcasts between 2:45pm and 5:15pm — a rule from the pre-internet era. The UK is the only major European country still enforcing it; fans don&apos;t call it heritage — they call it a tax on loyalty.</p>
-              </div>
-            </div>
-
-            {/* Verbatim rule */}
-            <div className="p-5" style={{ background: "rgba(223,235,247,0.03)", border: "1px solid rgba(223,235,247,0.1)" }}>
-              <div className="font-display font-extrabold text-[11.5px] tracking-[1.9px] uppercase mb-2" style={{ color: "rgba(223,235,247,0.5)" }}>The rule, verbatim</div>
-              <p className="text-[13.5px] leading-[23px]" style={{ color: "rgba(223,235,247,0.45)" }}>
-                "No live broadcast coverage of any association football match in the United Kingdom may commence between 14:45 and 17:15 on a Saturday." — UEFA Article 48, UEFA Statutes
-              </p>
-            </div>
-          </div>
-
-          {/* ── Right: callouts ── */}
-          <div className="col-span-12 md:col-span-7 flex flex-col gap-6">
-
-            <div className="p-8 flex flex-col gap-3" style={{ background: "rgba(254,209,7,0.04)", border: "1px solid rgba(254,209,7,0.15)" }}>
-              <div className="font-display font-black" style={{ fontSize: "clamp(4rem,10vw,96px)", color: "#fed107", lineHeight: "1" }}>113</div>
-              <div className="font-display font-bold text-[13px] tracking-[2px] uppercase" style={{ color: "rgba(223,235,247,0.45)" }}>Premier League games per season — paid for. Subscribed to. Completely unwatchable.</div>
-            </div>
-
-            <div className="p-8 flex flex-col gap-3" style={{ background: "rgba(223,235,247,0.02)", border: "1px solid rgba(223,235,247,0.08)" }}>
-              <div className="font-display font-black" style={{ fontSize: "clamp(4rem,10vw,96px)", color: "#dfebf7", lineHeight: "1" }}>1960</div>
-              <div className="font-display font-bold text-[13px] tracking-[2px] uppercase" style={{ color: "rgba(223,235,247,0.45)" }}>The year the 3pm blackout rule was introduced. Before colour TV. Before satellite. Before the internet existed.</div>
-            </div>
-
+          <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4 text-center">The reveal</div>
+          <div className="text-center">
+            <motion.div
+              initial={{ y: 120, opacity: 0, scale: 0.92 }}
+              animate={hasCalculatorResult ? { y: 0, opacity: 1, scale: 1 } : { y: 120, opacity: 0, scale: 0.92 }}
+              transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+              className="font-display font-black uppercase mx-auto"
+              style={{
+                fontSize: "clamp(4.5rem,16vw,240px)",
+                lineHeight: "0.9",
+                color: "#fed107",
+                letterSpacing: "-0.03em",
+                textShadow: "0 0 45px rgba(254,209,7,0.2)",
+              }}
+            >
+              £820+
+            </motion.div>
+            <p className="max-w-2xl mx-auto mt-5 text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
+              One season. One fan. One sport. The full legal stack climbs past this fast.
+            </p>
           </div>
         </div>
       </section>
@@ -767,55 +576,52 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── ABOUT + DEMANDS ── */}
-      <section style={{ borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
+      {/* ── THE MANIFESTO ── */}
+      <section id="manifesto" style={{ borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
         <div className="max-w-[1440px] mx-auto px-6 py-24 grid grid-cols-12 gap-6">
-
-          {/* About Paywall FC */}
-          <div className="col-span-12 lg:col-span-5 mb-6">
-            <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4">About Paywall FC</div>
-            <h2 className="font-display font-black uppercase text-brand-text" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-              A fictional club.<br />A very real<br />fight.
+          <div className="col-span-12 lg:col-span-8 mb-8">
+            <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4">The Manifesto</div>
+            <h2 className="font-display font-black uppercase text-brand-text mb-5" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
+              Why we demand this
             </h2>
-          </div>
-          <div className="col-span-12 lg:col-span-7 lg:flex lg:items-start mb-16">
             <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-              Independent of clubs and broadcasters, we publish what it really costs to watch football in England — and push for fan voice and fair access <strong className="font-semibold text-brand-text/85">before</strong> the 2029 deal is signed. Decade-long rights renewals shouldn&apos;t land without the people who pay.
+              The system is built to extract more and show less. We are done funding a setup that prices out loyal fans, blocks legal viewing, and sidelines supporters from the next rights cycle.
             </p>
           </div>
-
-          {/* Demands — conclusion register (full-width blocks, not quote-card rhythm) */}
-          <div className="col-span-12 -mx-6">
-            <div className="border-t-[8px] border-brand-yellow pt-16 md:pt-24 mt-14 md:mt-20" aria-hidden />
-            <div className="px-6 pb-10 md:pb-14">
-              <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow">What we&apos;re demanding</div>
-            </div>
-            <div className="flex flex-col">
-              <div className="stat-card w-full py-14 md:py-20 px-6 md:px-14 lg:px-20 bg-brand-yellow text-[#111011]">
-                <h3 className="font-display font-black uppercase tracking-tight max-w-4xl" style={{ fontSize: "clamp(2.25rem, 5.5vw, 3.75rem)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>
-                  One fair subscription
-                </h3>
-                <p className="mt-6 max-w-3xl font-sans text-[15.5px] md:text-[16px] leading-[1.65] font-medium">
-                  Every Premier League match — home and away — in one affordable subscription; stop forcing fans to buy two broadcasters &apos;just in case&apos; their club lands on the other channel.
-                </p>
+          <div className="col-span-12 -mx-6 flex flex-col gap-0">
+            {[
+              {
+                num: "01",
+                title: "One fair subscription",
+                body: "Every Premier League match in one affordable package. No more dual-subscription roulette just to follow your club.",
+                bg: "#fed107",
+                fg: "#111011",
+              },
+              {
+                num: "02",
+                title: "End the 3pm blackout",
+                body: "Scrap the Saturday streaming blackout. It is a legacy rule from another era that punishes paying supporters.",
+                bg: "#0a0a0a",
+                fg: "#dfebf7",
+              },
+              {
+                num: "03",
+                title: "Fans at the table",
+                body: "Binding fan consultation before the 2029 rights deal. No more decade-shaping decisions made without us.",
+                bg: "#fed107",
+                fg: "#111011",
+              },
+            ].map((d) => (
+              <div key={d.num} className="stat-card w-full px-6 md:px-10 lg:px-14 py-8 md:py-10 border-b" style={{ background: d.bg, color: d.fg, borderColor: d.bg === "#0a0a0a" ? "rgba(223,235,247,0.1)" : "rgba(0,0,0,0.18)" }}>
+                <div className="max-w-[1440px] mx-auto grid grid-cols-12 gap-6 items-start">
+                  <div className="col-span-12 md:col-span-2 font-display font-black text-6xl md:text-7xl leading-none opacity-80">{d.num}</div>
+                  <div className="col-span-12 md:col-span-10">
+                    <h3 className="font-display font-black uppercase mb-3 text-[27px] md:text-[34px] leading-[1.05]">{d.title}</h3>
+                    <p className="text-[15px] md:text-[17px] leading-[26px] md:leading-[30px] opacity-90 max-w-5xl">{d.body}</p>
+                  </div>
+                </div>
               </div>
-              <div className="stat-card w-full py-14 md:py-20 px-6 md:px-14 lg:px-20 border-t border-white/[0.08]" style={{ background: "#0a0a0a" }}>
-                <h3 className="font-display font-black uppercase tracking-tight text-brand-text max-w-4xl" style={{ fontSize: "clamp(2.25rem, 5.5vw, 3.75rem)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>
-                  End the 3pm blackout
-                </h3>
-                <p className="mt-6 max-w-3xl font-sans text-[15.5px] md:text-[16px] leading-[1.65]" style={{ color: "rgba(223,235,247,0.68)" }}>
-                  Scrap the Saturday streaming blackout — it was written for an era before broadband, and today it only guarantees that loyal subscribers still miss the kickoffs they pay for.
-                </p>
-              </div>
-              <div className="stat-card w-full py-14 md:py-20 px-6 md:px-14 lg:px-20 bg-brand-yellow text-[#111011] border-t border-black/15">
-                <h3 className="font-display font-black uppercase tracking-tight max-w-4xl" style={{ fontSize: "clamp(2.25rem, 5.5vw, 3.75rem)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>
-                  Fans at the table
-                </h3>
-                <p className="mt-6 max-w-3xl font-sans text-[15.5px] md:text-[16px] leading-[1.65] font-medium">
-                  Binding fan consultation before the 2029 rights deal — the Football Governance Act 2025 put the Independent Football Regulator in law; the lever exists, and we need it used while negotiators are still listening.
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>
@@ -836,18 +642,8 @@ export default function Landing() {
           </h2>
 
           <p className="text-[16px] leading-[28px] text-center mb-8" style={{ color: "rgba(223,235,247,0.5)" }}>
-            Tell the league and broadcasters: fair access to every game, end the 3pm blackout for legal streaming, and put supporters in the room before the <strong className="font-semibold text-brand-text/80">2029</strong> deal is done — not after the ink is dry.
+            The Super League collapsed in 48 hours because fans made silence impossible. Add your name and do it again.
           </p>
-
-          {/* Sceptic acknowledgement */}
-          <div className="mb-10 p-6 text-left" style={{ border: "1px solid rgba(223,235,247,0.07)", background: "rgba(223,235,247,0.02)" }}>
-            <p className="text-[14.5px] leading-[26px] mb-3" style={{ color: "rgba(223,235,247,0.55)" }}>
-              Petitions fail when they stay invisible. You&apos;ve seen the template — sign, silence, shrug.
-            </p>
-            <p className="text-[14.5px] leading-[26px]" style={{ color: "rgba(223,235,247,0.55)" }}>
-              The Super League collapsed in 48 hours because fans made it costly to ignore. This count is meant the same way: a public figure negotiators and press can&apos;t hand-wave when the rights conversation goes loud. Add your name — make the next headline harder to bury.
-            </p>
-          </div>
 
           {/* Count */}
           <div className="petition-count-glow font-display font-black text-center mb-2" style={{
@@ -856,21 +652,12 @@ export default function Landing() {
           }} suppressHydrationWarning>{numFmt(signers)}</div>
           <div className="font-display font-bold text-[12.8px] tracking-[2.8px] uppercase mb-8" style={{ color: "rgba(223,235,247,0.42)" }} suppressHydrationWarning>fans have signed</div>
 
-          <div className="px-4 py-3 font-display font-bold text-[11.8px] tracking-[1.8px] uppercase text-center mb-10" style={{
+          <div className="px-4 py-3 font-display font-bold text-[11.8px] tracking-[1.8px] uppercase text-center mb-8" style={{
             background: "rgba(254,209,7,0.06)",
             border: "1px solid rgba(254,209,7,0.25)",
             color: "rgba(254,209,7,0.85)",
           }}>
             Public count · Private inbox — every name adds leverage
-          </div>
-
-          <div className="text-center mb-10">
-            <div className="font-display font-black uppercase text-brand-text" style={{ fontSize: "clamp(2rem,6vw,56px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-              The Super League collapsed in 48 hours.
-            </div>
-            <div className="font-display font-black uppercase text-brand-yellow" style={{ fontSize: "clamp(2rem,6vw,56px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
-              This can too.
-            </div>
           </div>
 
           {submitted ? (
@@ -932,8 +719,8 @@ export default function Landing() {
           </p>
           <div className="col-span-12 md:col-span-3 flex flex-wrap justify-center md:justify-end gap-x-6 gap-y-3">
             {[
-              ["#problem","Problem"],
-              ["#costs","Costs"],
+              ["#reveal","Reveal"],
+              ["#manifesto","Manifesto"],
               ["#calculator","Calculator"],
               ["#petition","Petition"],
               ["mailto:press@paywallfc.com", "Press & Contact"],

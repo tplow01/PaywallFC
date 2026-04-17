@@ -5,15 +5,17 @@ import { CLUBS, getClubByKey } from "../lib/clubs";
 import { isBlackout, PRICES, SEASON_MONTHS, TV_LIC_SEASON, tvLicSoFar } from "../lib/calculator";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-// Source: "The Price of Loyalty" research report (2025/26 season) — Premier League only
-// Amazon Prime excluded: only required for Champions League, not PL
+// Source: "The Price of Loyalty" research report (2025/26 season)
 // SEASON_MONTHS, TV_LIC_SEASON, tvLicSoFar imported from lib/calculator
 const SKY_MONTHLY  = PRICES.skyNow;                           // £34.99 — NOW Sports
 const TNT_MONTHLY  = PRICES.tnt;                              // £30.99 — TNT/HBO Max, 9 months (Sep–May)
+const AMAZON_MONTHLY = PRICES.amazon;                         // £8.99 — Amazon Prime Video
 const SKY_SEASON   = SKY_MONTHLY * SEASON_MONTHS;             // £349.90
 const TNT_SEASON   = TNT_MONTHLY * 9;                         // £278.91 (no TNT in August)
-const TOTAL_SEASON = SKY_SEASON + TNT_SEASON + TV_LIC_SEASON; // £775.13
+const AMAZON_SEASON = AMAZON_MONTHLY * SEASON_MONTHS;         // £89.90
+const TOTAL_SEASON = SKY_SEASON + TNT_SEASON + AMAZON_SEASON + TV_LIC_SEASON;
 const PINT_PRICE   = 6.20;
+const REVEAL_TARGET = 820;
 
 // ─── Nav links ────────────────────────────────────────────────────────────────
 const NAV_LINKS = [["#calculator","Calculator"],["#reveal","The Reveal"],["#manifesto","Manifesto"]];
@@ -45,7 +47,7 @@ function monthsElapsed() {
   return Math.min(ms / (1000 * 60 * 60 * 24 * 30.44), SEASON_MONTHS);
 }
 function calcSoFar(months) {
-  return (SKY_MONTHLY + TNT_MONTHLY) * months + tvLicSoFar(months);
+  return (SKY_MONTHLY + TNT_MONTHLY + AMAZON_MONTHLY) * months + tvLicSoFar(months);
 }
 function fmt(n)  { return "£" + n.toFixed(2); }
 function fmtR(n) { return "£" + numFmt(n); }
@@ -85,6 +87,30 @@ function AnimatedTotal({ value, format = fmtR, className, highlight }) {
       {text}
     </motion.span>
   );
+}
+
+function AnimatedCountUp({ target, className, suffix = "" }) {
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const duration = 1600;
+    const from = 0;
+    const to = Math.max(0, Math.round(target));
+
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+
+  return <span className={className}>{`£${numFmt(display)}${suffix}`}</span>;
 }
 function formatDate(d) {
   return new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
@@ -134,13 +160,14 @@ function VideoSection() {
 }
 
 // ─── Calculator section ───────────────────────────────────────────────────────
-function CalculatorSection({ onResultChange }) {
+function CalculatorSection({ onResultChange, onUnlock, onStatsChange }) {
   const [clubKey, setClubKey] = useState("");
   const [matches, setMatches] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
   const [includeSky, setIncludeSky] = useState(true);
   const [includeTnt, setIncludeTnt] = useState(true);
+  const [includeAmazon, setIncludeAmazon] = useState(true);
   const [includeTv, setIncludeTv]   = useState(true);
 
   const club = getClubByKey(clubKey);
@@ -148,8 +175,14 @@ function CalculatorSection({ onResultChange }) {
   const fetchMatches = useCallback(async (id) => {
     setLoading(true); setError(null); setMatches(null);
     try {
-      const res  = await fetch("/api/fixtures/" + id);
-      const payload = await res.json();
+      const res = await fetch("/api/fixtures/" + id);
+      const raw = await res.text();
+      let payload = null;
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(`Fixtures API returned non-JSON (${res.status}).`);
+      }
       if (!res.ok) {
         const detail = payload?.details ? ` — ${payload.details}` : "";
         throw new Error((payload?.error || ("API error " + res.status)) + detail);
@@ -170,13 +203,16 @@ function CalculatorSection({ onResultChange }) {
   const soFarFull = calcSoFar(months);
   const skySoFar  = SKY_MONTHLY * months;
   const tntSoFar  = TNT_MONTHLY * Math.max(0, months - 1); // TNT starts Sep (no TNT in Aug)
-  const tvSoFar   = soFarFull - skySoFar - tntSoFar;
+  const amazonSoFar = AMAZON_MONTHLY * months;
+  const tvSoFar   = soFarFull - skySoFar - tntSoFar - amazonSoFar;
   const soFar =
     (includeSky ? skySoFar : 0) +
     (includeTnt ? tntSoFar : 0) +
+    (includeAmazon ? amazonSoFar : 0) +
     (includeTv ? tvSoFar : 0);
 
-  const finished   = matches ? matches.filter(m => m.status === "FINISHED") : [];
+  const allMatches = matches ? [...matches].sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate)) : [];
+  const finished   = allMatches.filter(m => m.status === "FINISHED");
   const blacked    = finished.filter(m => isBlackout(m.utcDate));
   const streamable = finished.length - blacked.length;
   const cpg        = streamable > 0 ? soFar / streamable : 0;
@@ -185,9 +221,18 @@ function CalculatorSection({ onResultChange }) {
     onResultChange?.(Boolean(club && matches));
   }, [club, matches, onResultChange]);
 
+  useEffect(() => {
+    onStatsChange?.({
+      costPerGame: cpg,
+      pintsPerGame: cpg > 0 ? cpg / PINT_PRICE : 0,
+      gamesMissed: blacked.length,
+      hasData: Boolean(club && matches),
+    });
+  }, [cpg, blacked.length, club, matches, onStatsChange]);
+
   return (
     <section id="calculator" style={{ borderTop: "1px solid rgba(223,235,247,0.07)" }}>
-      <div className="max-w-[1440px] mx-auto px-6 py-24 sticky bottom-0">
+      <div className="max-w-[1440px] mx-auto px-6 py-24">
 
         {/* ── Section header — full width above the interactive grid ── */}
         <div className="grid grid-cols-12 gap-6 mb-10">
@@ -198,9 +243,11 @@ function CalculatorSection({ onResultChange }) {
             </h2>
           </div>
           <div className="col-span-12 lg:col-span-7 flex items-end">
-            <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
-              Choose your club. We pull this season&apos;s fixtures, pro-rate Sky, TNT, and the TV licence, and tally your personal 3pm blackouts — then show what each <strong className="font-semibold text-brand-text/90">watchable</strong> game is costing you after the blocks.
-            </p>
+            <div>
+              <p className="text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
+                Choose your club. We pull this season&apos;s fixtures, pro-rate Sky, TNT, Amazon, and the TV licence, and tally your personal 3pm blackouts — then show what each <strong className="font-semibold text-brand-text/90">watchable</strong> game is costing you after the blocks.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -254,10 +301,11 @@ function CalculatorSection({ onResultChange }) {
                 <div className="bg-brand-panel border border-brand-border p-4 rounded-sm">
                   <div className="font-display font-bold text-xs tracking-widest uppercase text-brand-muted mb-1">Spend by service</div>
                   <p className="text-[11px] leading-snug mb-4" style={{ color: "rgba(223,235,247,0.28)" }}>Toggle what you pay for — your total revs to match.</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
                       { label: "Sky", val: skySoFar, color: "#4a90d9", on: includeSky, setOn: setIncludeSky },
                       { label: "TNT", val: tntSoFar, color: "#f0a500", on: includeTnt, setOn: setIncludeTnt },
+                      { label: "Amazon", val: amazonSoFar, color: "#36c2ff", on: includeAmazon, setOn: setIncludeAmazon },
                       { label: "Licence", val: tvSoFar, color: "rgba(255,255,255,0.5)", on: includeTv, setOn: setIncludeTv },
                     ].map(({ label, val, color, on, setOn }) => (
                       <button
@@ -278,23 +326,33 @@ function CalculatorSection({ onResultChange }) {
                 </div>
 
                 {cpg > 0 && (
-                  <div className="bg-brand-panel border border-brand-yellow/15 p-4 rounded-sm">
-                    <div className="font-display font-bold text-xs tracking-widest uppercase text-brand-yellow/60 mb-3">Put it in perspective</div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <div className="font-display font-black text-3xl text-white leading-none">{fmt(cpg)}</div>
-                        <div className="text-xs text-white/40 mt-1">per game you watch</div>
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-brand-panel border border-brand-yellow/15 p-4 rounded-sm">
+                      <div className="font-display font-bold text-xs tracking-widest uppercase text-brand-yellow/60 mb-3">Put it in perspective</div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="font-display font-black text-3xl text-white leading-none">{fmt(cpg)}</div>
+                          <div className="text-xs text-white/40 mt-1">per game you watch</div>
+                        </div>
+                        <div>
+                          <div className="font-display font-black text-3xl text-brand-yellow leading-none">{(cpg / PINT_PRICE).toFixed(1)}</div>
+                          <div className="text-xs text-white/40 mt-1">pints at £{PINT_PRICE.toFixed(2)} each</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-display font-black text-3xl text-brand-yellow leading-none">{(cpg / PINT_PRICE).toFixed(1)}</div>
-                        <div className="text-xs text-white/40 mt-1">pints at £{PINT_PRICE.toFixed(2)} each</div>
+                      <div className="mt-4 pt-4 border-t border-brand-border">
+                        <p className="font-display font-bold italic text-sm text-white/70 leading-relaxed">
+                          That's roughly <span className="text-brand-yellow">{Math.floor((soFar / PINT_PRICE) / 4)} rounds</span> for you and three mates watching {club.name} at the pub — for free.
+                        </p>
                       </div>
                     </div>
-                    <div className="mt-4 pt-4 border-t border-brand-border">
-                      <p className="font-display font-bold italic text-sm text-white/70 leading-relaxed">
-                        That's roughly <span className="text-brand-yellow">{Math.floor((soFar / PINT_PRICE) / 4)} rounds</span> for you and three mates watching {club.name} at the pub — for free.
-                      </p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onUnlock?.()}
+                      className="w-full lg:w-auto text-center font-display font-black text-[11px] tracking-[2px] uppercase px-5 py-3 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-yellow/50"
+                      style={{ background: "rgba(254,209,7,0.12)", color: "#fed107", border: "1px solid rgba(254,209,7,0.28)" }}
+                    >
+                      Skip fixtures
+                    </button>
                   </div>
                 )}
               </div>
@@ -330,16 +388,17 @@ function CalculatorSection({ onResultChange }) {
                   <div className="font-display font-black text-white uppercase tracking-wider text-sm">{club.name} — 2025/26</div>
                   <div className="w-2 h-2 rounded-full bg-brand-yellow" />
                 </div>
-                {finished.length > 0 ? (
+                {allMatches.length > 0 ? (
                   <div className="divide-y divide-brand-border">
-                    {finished.map(m => {
-                      const blacked = isBlackout(m.utcDate);
+                    {allMatches.map(m => {
+                      const isFinished = m.status === "FINISHED";
+                      const blacked = isFinished && isBlackout(m.utcDate);
                       const result  = getResult(m, club.id);
                       const isHome  = m.homeTeam.id === club.id;
                       const opp     = isHome ? (m.awayTeam.shortName || m.awayTeam.name) : "@ " + (m.homeTeam.shortName || m.homeTeam.name);
                       const resColor = result ? (result.result === "W" ? "#4caf50" : result.result === "L" ? "#e07c35" : "rgba(255,255,255,0.4)") : "rgba(255,255,255,0.3)";
                       return (
-                        <div key={m.id} className={`grid px-5 py-3 gap-2 items-center ${blacked ? "bg-brand-yellow/[0.04]" : "hover:bg-white/3"} transition-colors`}
+                        <div key={m.id} className={`grid px-5 py-3 gap-2 items-center ${blacked ? "bg-brand-yellow/[0.04]" : "hover:bg-white/3"} ${!isFinished ? "opacity-70" : ""} transition-colors`}
                           style={{ gridTemplateColumns: "80px 1fr 48px 64px" }}>
                           <div>
                             <div className="font-sans text-xs text-white/40">{formatDate(m.utcDate)}</div>
@@ -348,9 +407,12 @@ function CalculatorSection({ onResultChange }) {
                           <div className="font-sans text-sm font-medium flex items-center gap-2" style={{ color: blacked ? "rgba(239,68,68,0.7)" : "rgba(255,255,255,0.8)" }}>
                             {opp}
                             {blacked && <span className="font-display font-bold text-xs px-2 py-0.5" style={{ color: "#fed107", background: "rgba(254,209,7,0.12)" }}>BLOCKED</span>}
+                            {!isFinished && <span className="font-display font-bold text-xs px-2 py-0.5" style={{ color: "rgba(223,235,247,0.7)", background: "rgba(223,235,247,0.1)" }}>{m.status}</span>}
                           </div>
                           <div className="font-display font-bold text-sm text-right" style={{ color: resColor }}>{result ? result.score : "—"}</div>
-                          <div className="font-display font-bold text-sm text-right" style={{ color: blacked ? "#ef4444" : "rgba(255,255,255,0.5)" }}>{blacked ? "—" : fmt(cpg)}</div>
+                          <div className="font-display font-bold text-sm text-right" style={{ color: blacked ? "#ef4444" : "rgba(255,255,255,0.5)" }}>
+                            {isFinished ? (blacked ? "—" : fmt(cpg)) : "—"}
+                          </div>
                         </div>
                       );
                     })}
@@ -379,12 +441,24 @@ export default function Landing() {
   const [scrolled, setScrolled]   = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hasCalculatorResult, setHasCalculatorResult] = useState(false);
+  const [calculatorStats, setCalculatorStats] = useState({
+    costPerGame: 0,
+    pintsPerGame: 0,
+    gamesMissed: 0,
+    hasData: false,
+  });
 
   useEffect(() => {
     const interval = setInterval(() => setSigners(s => s + Math.floor(Math.random() * 3)), 8000);
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => { clearInterval(interval); window.removeEventListener("scroll", onScroll); };
+  }, []);
+
+  const handleCalculatorUnlock = useCallback(() => {
+    requestAnimationFrame(() => {
+      document.getElementById("reveal")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }, []);
 
   const handleSubmit = (e) => { e.preventDefault(); if (email && firstName) setSubmitted(true); };
@@ -400,7 +474,7 @@ export default function Landing() {
       </Head>
 
       {/* ── NAV ── */}
-      <header className="sticky top-0 z-50 transition-all" style={{
+      <header className="sticky top-0 z-[100] transition-all" style={{
         background: "#fed107",
         backdropFilter: "blur(20px)",
         borderBottom: "1px solid rgba(0,0,0,0.12)",
@@ -408,8 +482,9 @@ export default function Landing() {
         <div className="max-w-[1440px] mx-auto px-6 h-[72px] flex items-center justify-between gap-6">
 
           {/* Wordmark */}
-          <a href="/" className="shrink-0" aria-label="Paywall FC — home">
-            <img src="/badge.png" alt="Paywall FC logo" className="h-12 w-12 object-contain" />
+          <a href="/" className="shrink-0 flex items-center gap-3" aria-label="Paywall FC — home">
+            <img src="/badge.png" alt="" className="h-10 w-10 object-contain" />
+            <span className="font-display font-black text-[14px] tracking-[2.5px] uppercase hidden sm:block" style={{ color: "#111011" }}>PAYWALL FC</span>
           </a>
 
           {/* Right: nav links + CTA */}
@@ -417,10 +492,12 @@ export default function Landing() {
             <nav className="hidden md:flex items-center gap-1 mr-3">
               {NAV_LINKS.map(([href, label]) => (
                 <a key={href} href={href}
-                  className="font-display font-semibold text-[11px] tracking-[1.5px] uppercase px-4 py-2 transition-colors"
+                  className="font-display font-semibold text-[11px] tracking-[1.5px] uppercase px-4 py-2 transition-colors rounded-sm focus-visible:outline-none focus-visible:bg-black/10"
                   style={{ color: "rgba(0,0,0,0.65)" }}
-                  onMouseEnter={e => e.target.style.color = "#111011"}
-                  onMouseLeave={e => e.target.style.color = "rgba(0,0,0,0.65)"}
+                  onMouseEnter={e => e.currentTarget.style.color = "#111011"}
+                  onMouseLeave={e => e.currentTarget.style.color = "rgba(0,0,0,0.65)"}
+                  onFocus={e => e.currentTarget.style.color = "#111011"}
+                  onBlur={e => e.currentTarget.style.color = "rgba(0,0,0,0.65)"}
                 >{label}</a>
               ))}
             </nav>
@@ -428,7 +505,12 @@ export default function Landing() {
               style={{ background: "#121212", color: "#fed107" }}>
               Sign the Petition
             </a>
-            <button className="md:hidden font-display font-bold text-xs text-black" onClick={() => setMobileOpen(o => !o)}>
+            <button
+              className="md:hidden font-display font-bold text-xs text-black px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-black"
+              onClick={() => setMobileOpen(o => !o)}
+              aria-expanded={mobileOpen}
+              aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+            >
               {mobileOpen ? "Close" : "Menu"}
             </button>
           </div>
@@ -439,7 +521,7 @@ export default function Landing() {
           <div className="md:hidden border-t" style={{ borderColor: "rgba(0,0,0,0.12)", background: "#fed107" }}>
             {NAV_LINKS.map(([href, label]) => (
               <a key={href} href={href} onClick={() => setMobileOpen(false)}
-                className="block font-display font-semibold text-sm tracking-widest uppercase px-6 py-3 border-b transition-colors hover:text-brand-yellow"
+                className="block font-display font-semibold text-sm tracking-widest uppercase px-6 py-3 border-b transition-colors hover:text-black focus-visible:outline-none focus-visible:bg-black/10"
                 style={{ color: "rgba(0,0,0,0.75)", borderColor: "rgba(0,0,0,0.1)" }}>{label}</a>
             ))}
             <a href="#petition" onClick={() => setMobileOpen(false)}
@@ -474,7 +556,7 @@ export default function Landing() {
       </section>
 
       {/* ── MONEY STRIP (STICKY) ── */}
-      <div className="sticky top-[72px] z-20">
+      <div className="sticky top-[72px] z-[60]">
         <div className="overflow-hidden py-[14px]" style={{ background: "linear-gradient(90deg, #fed107, #ffd42a)" }}>
           <div className="money-strip-track flex whitespace-nowrap">
             {[...Array(2)].map((_, i) => (
@@ -487,15 +569,11 @@ export default function Landing() {
                     >
                       {item}
                     </span>
-                    <img
-                      src="/Picon.svg"
-                      alt="Paywall FC icon"
-                      aria-hidden="false"
-                      className="h-6 w-6 mx-5 shrink-0"
-                      style={{
-                        filter: "drop-shadow(0 0 3px rgba(0,0,0,0.3))",
-                      }}
-                    />
+                    <span
+                      className="font-display font-black text-[20px] mx-4 select-none shrink-0"
+                      style={{ color: "rgba(0,0,0,0.28)" }}
+                      aria-hidden="true"
+                    >£</span>
                   </div>
                 ))}
               </div>
@@ -505,7 +583,11 @@ export default function Landing() {
       </div>
 
       {/* ── CALCULATOR ── */}
-      <CalculatorSection onResultChange={setHasCalculatorResult} />
+      <CalculatorSection
+        onResultChange={setHasCalculatorResult}
+        onUnlock={handleCalculatorUnlock}
+        onStatsChange={setCalculatorStats}
+      />
 
       {/* ── THE REVEAL ── */}
       <section id="reveal" style={{ borderTop: "1px solid rgba(223,235,247,0.07)", borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
@@ -514,7 +596,7 @@ export default function Landing() {
           <div className="text-center">
             <motion.div
               initial={{ y: 120, opacity: 0, scale: 0.92 }}
-              animate={hasCalculatorResult ? { y: 0, opacity: 1, scale: 1 } : { y: 120, opacity: 0, scale: 0.92 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
               transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
               className="font-display font-black uppercase mx-auto"
               style={{
@@ -525,11 +607,37 @@ export default function Landing() {
                 textShadow: "0 0 45px rgba(254,209,7,0.2)",
               }}
             >
-              £820+
+              <AnimatedCountUp target={REVEAL_TARGET} suffix="+" />
             </motion.div>
             <p className="max-w-2xl mx-auto mt-5 text-[15.5px] leading-[28px]" style={{ color: "rgba(223,235,247,0.6)" }}>
               One season. One fan. One sport. The full legal stack climbs past this fast.
             </p>
+          </div>
+          <div className="mt-14 grid grid-cols-12 gap-3">
+            {[
+              {
+                label: "Average cost per game",
+                value: calculatorStats.hasData ? fmt(calculatorStats.costPerGame) : "—",
+                tone: "text-brand-yellow",
+              },
+              {
+                label: "Average pints per game",
+                value: calculatorStats.hasData ? calculatorStats.pintsPerGame.toFixed(1) : "—",
+                tone: "text-brand-text",
+              },
+              {
+                label: "Games missed to blackout",
+                value: calculatorStats.hasData ? String(calculatorStats.gamesMissed) : "—",
+                tone: "text-brand-text",
+              },
+            ].map((stat) => (
+              <div key={stat.label} className="col-span-12 md:col-span-4 border p-4" style={{ borderColor: "rgba(223,235,247,0.12)", background: "rgba(223,235,247,0.02)" }}>
+                <div className="font-display font-semibold text-[10px] tracking-[2px] uppercase mb-2" style={{ color: "rgba(223,235,247,0.45)" }}>
+                  {stat.label}
+                </div>
+                <div className={`font-display font-black text-[30px] leading-none ${stat.tone}`}>{stat.value}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -620,7 +728,7 @@ export default function Landing() {
 
       {/* ── PETITION ── */}
       <section id="petition" style={{ borderTop: "1px solid rgba(223,235,247,0.07)" }}>
-        <div className="max-w-[1440px] mx-auto px-6 py-24 grid grid-cols-12 gap-6 relative z-30">
+        <div className="max-w-[1440px] mx-auto px-6 py-24 grid grid-cols-12 gap-6">
           <div className="col-span-12 md:col-span-8 md:col-start-3 lg:col-span-6 lg:col-start-4 text-center">
           {/* Eyebrow */}
           <div className="flex items-center justify-center gap-3 mb-10">
@@ -655,7 +763,7 @@ export default function Landing() {
           {submitted ? (
             <div className="p-10" style={{ border: "1px solid rgba(254,209,7,0.2)", background: "rgba(254,209,7,0.05)" }}>
               <img src="/badge.png" alt="" className="w-16 h-16 object-contain mx-auto mb-4" style={{ filter: "drop-shadow(0 0 12px rgba(254,209,7,0.35))" }} />
-              <div className="font-display font-black text-brand-yellow text-2xl uppercase mb-2">You're in, {firstName}.</div>
+              <div className="font-display font-black text-brand-yellow text-2xl uppercase mb-2">You&apos;re in, {firstName}.</div>
               <div className="text-sm leading-relaxed" style={{ color: "rgba(223,235,247,0.5)" }}>Share the link — the 2029 deal will be fought in public as much as in boardrooms. Make sure they see the number.</div>
             </div>
           ) : (
@@ -691,7 +799,7 @@ export default function Landing() {
                 Sign the Petition
               </button>
               <p className="text-[12px] leading-[20px] text-center pt-3" style={{ color: "rgba(223,235,247,0.22)" }}>
-                By signing you agree to receive campaign updates from Paywall FC. We'll never share your data. Unsubscribe anytime. Not affiliated with any PL club or broadcaster.
+                By signing you agree to receive campaign updates from Paywall FC. We&apos;ll never share your data. Unsubscribe anytime. Not affiliated with any PL club or broadcaster.
               </p>
             </form>
           )}

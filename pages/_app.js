@@ -5,7 +5,7 @@ import "../styles/globals.css";
 import Head from "next/head";
 
 const kanit = Kanit({
-  weight: ["500", "700"],
+  weight: ["500", "700", "800", "900"],
   subsets: ["latin"],
   variable: "--font-kanit",
 });

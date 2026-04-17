@@ -457,6 +457,14 @@ export default function Landing() {
     gamesMissed: 0,
     hasData: false,
   });
+  const [avgStats, setAvgStats] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/averages")
+      .then(r => r.json())
+      .then(d => setAvgStats(d))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => setSigners(s => s + Math.floor(Math.random() * 3)), 8000);
@@ -628,17 +636,17 @@ export default function Landing() {
             {[
               {
                 label: "Average cost per game",
-                value: calculatorStats.hasData ? fmt(calculatorStats.costPerGame) : "—",
+                value: avgStats ? fmt(avgStats.avgCostPerGame) : "—",
                 tone: "text-brand-yellow",
               },
               {
                 label: "Average pints per game",
-                value: calculatorStats.hasData ? calculatorStats.pintsPerGame.toFixed(1) : "—",
+                value: avgStats ? avgStats.avgPintsPerGame.toFixed(1) : "—",
                 tone: "text-brand-text",
               },
               {
                 label: "Games missed to blackout",
-                value: calculatorStats.hasData ? String(calculatorStats.gamesMissed) : "—",
+                value: avgStats ? String(avgStats.avgGamesMissed) : "—",
                 tone: "text-brand-text",
               },
             ].map((stat) => (

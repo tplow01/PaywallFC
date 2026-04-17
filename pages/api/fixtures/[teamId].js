@@ -3,7 +3,17 @@
 // To refresh: run `node scripts/fetch-fixtures.mjs` then redeploy.
 import fixturesData from "../../../lib/fixtures-data.json";
 
+function isAllowedOrigin(req) {
+  if (process.env.NODE_ENV === "development") return true;
+  const origin = req.headers.origin || req.headers.referer || "";
+  return origin.includes("paywall.vercel.app") || /paywallfc[^.]*\.vercel\.app/.test(origin);
+}
+
 export default function handler(req, res) {
+  if (!isAllowedOrigin(req)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
   const { teamId } = req.query;
   const teamIdNum = Number(teamId);
 

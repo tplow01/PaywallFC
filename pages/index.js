@@ -441,7 +441,7 @@ function CalculatorSection({ onResultChange, onUnlock, onStatsChange }) {
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
-export default function Landing() {
+export default function Landing({ avgStats: initialAvgStats }) {
   const [email, setEmail]         = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName]   = useState("");
@@ -457,14 +457,7 @@ export default function Landing() {
     gamesMissed: 0,
     hasData: false,
   });
-  const [avgStats, setAvgStats] = useState(null);
-
-  useEffect(() => {
-    fetch("/api/averages")
-      .then(r => r.json())
-      .then(d => setAvgStats(d))
-      .catch(() => {});
-  }, []);
+  const avgStats = initialAvgStats;
 
   useEffect(() => {
     const interval = setInterval(() => setSigners(s => s + Math.floor(Math.random() * 3)), 8000);
@@ -857,4 +850,41 @@ export default function Landing() {
       </footer>
     </>
   );
+}
+
+export async function getStaticProps() {
+  const { CLUBS } = require("../lib/clubs");
+  const { isBlackout, PRICES, SEASON_MONTHS, tvLicSoFar } = require("../lib/calculator");
+  const fixturesData = require("../lib/fixtures-data.json");
+
+  const PINT_PRICE = 6.20;
+  const months = Math.min(
+    Math.max(0, new Date() - new Date("2025-08-15")) / (1000 * 60 * 60 * 24 * 30.44),
+    SEASON_MONTHS
+  );
+  const soFar = (PRICES.skyNow + PRICES.tnt + PRICES.amazon) * months + tvLicSoFar(months);
+
+  let totalCpg = 0, totalBlackout = 0, count = 0;
+  for (const club of CLUBS) {
+    const matches = fixturesData[String(club.id)];
+    if (!matches?.length) continue;
+    const finished   = matches.filter(m => m.status === "FINISHED");
+    const blacked    = finished.filter(m => isBlackout(m.utcDate));
+    const streamable = finished.length - blacked.length;
+    totalCpg      += streamable > 0 ? soFar / streamable : 0;
+    totalBlackout += blacked.length;
+    count++;
+  }
+
+  const avgCpg = count > 0 ? totalCpg / count : 0;
+  return {
+    props: {
+      avgStats: {
+        avgCostPerGame:  avgCpg,
+        avgPintsPerGame: avgCpg > 0 ? avgCpg / PINT_PRICE : 0,
+        avgGamesMissed:  Math.round(count > 0 ? totalBlackout / count : 0),
+      },
+    },
+    revalidate: 3600,
+  };
 }

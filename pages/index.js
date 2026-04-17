@@ -690,8 +690,8 @@ export default function Landing({ avgStats: initialAvgStats }) {
 
       {/* ── THE MANIFESTO ── */}
       <section id="manifesto" style={{ borderBottom: "1px solid rgba(223,235,247,0.07)" }}>
-        <div className="max-w-[1440px] mx-auto px-6 py-24 grid grid-cols-12 gap-6">
-          <div className="col-span-12 lg:col-span-8 mb-8">
+        <div className="max-w-[1440px] mx-auto px-6 pt-24 pb-12 grid grid-cols-12 gap-6">
+          <div className="col-span-12 lg:col-span-8">
             <div className="font-display font-semibold text-[11px] tracking-[3.5px] uppercase text-brand-yellow mb-4">The Manifesto</div>
             <h2 className="font-display font-black uppercase text-brand-text mb-5" style={{ fontSize: "clamp(2.4rem,5vw,57px)", letterSpacing: "-0.02em", lineHeight: "1.05" }}>
               Why we demand this
@@ -700,42 +700,40 @@ export default function Landing({ avgStats: initialAvgStats }) {
               The system is built to extract more and show less. We are done funding a setup that prices out loyal fans, blocks legal viewing, and sidelines supporters from the next rights cycle.
             </p>
           </div>
-          <div className="col-span-12 -mx-6 flex flex-col gap-0">
-            {[
-              {
-                num: "01",
-                title: "One fair subscription",
-                body: "Every Premier League match in one affordable package. No more dual-subscription roulette just to follow your club.",
-                bg: "#fed107",
-                fg: "#111011",
-              },
-              {
-                num: "02",
-                title: "End the 3pm blackout",
-                body: "Scrap the Saturday streaming blackout. It is a legacy rule from another era that punishes paying supporters.",
-                bg: "#0a0a0a",
-                fg: "#dfebf7",
-              },
-              {
-                num: "03",
-                title: "Fans at the table",
-                body: "Binding fan consultation before the 2029 rights deal. No more decade-shaping decisions made without us.",
-                bg: "#fed107",
-                fg: "#111011",
-              },
-            ].map((d) => (
-              <div key={d.num} className="stat-card w-full flex items-center px-6 md:px-10 lg:px-14 py-16 md:py-20 border-b" style={{ minHeight: "33.333vh", background: d.bg, color: d.fg, borderColor: d.bg === "#0a0a0a" ? "rgba(223,235,247,0.1)" : "rgba(0,0,0,0.18)" }}>
-                <div className="max-w-[1440px] mx-auto w-full grid grid-cols-12 gap-6 items-center">
-                  <div className="col-span-12 md:col-span-2 font-display font-black leading-none opacity-60" style={{ fontSize: "clamp(5rem,10vw,140px)" }}>{d.num}</div>
-                  <div className="col-span-12 md:col-span-10">
-                    <h3 className="font-display font-black uppercase mb-4 leading-[1.0]" style={{ fontSize: "clamp(2rem,5.5vw,72px)" }}>{d.title}</h3>
-                    <p className="opacity-80 max-w-4xl" style={{ fontSize: "clamp(1rem,1.8vw,22px)", lineHeight: "1.6" }}>{d.body}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
+        {[
+          {
+            num: "01",
+            title: "One fair subscription",
+            body: "Every Premier League match in one affordable package. No more dual-subscription roulette just to follow your club.",
+            bg: "#fed107",
+            fg: "#111011",
+          },
+          {
+            num: "02",
+            title: "End the 3pm blackout",
+            body: "Scrap the Saturday streaming blackout. It is a legacy rule from another era that punishes paying supporters.",
+            bg: "#0a0a0a",
+            fg: "#dfebf7",
+          },
+          {
+            num: "03",
+            title: "Fans at the table",
+            body: "Binding fan consultation before the 2029 rights deal. No more decade-shaping decisions made without us.",
+            bg: "#fed107",
+            fg: "#111011",
+          },
+        ].map((d) => (
+          <div key={d.num} className="stat-card w-full flex items-center px-6 md:px-10 lg:px-14 py-16 md:py-20 border-b" style={{ minHeight: "33.333vh", background: d.bg, color: d.fg, borderColor: d.bg === "#0a0a0a" ? "rgba(223,235,247,0.1)" : "rgba(0,0,0,0.18)" }}>
+            <div className="max-w-[1440px] mx-auto w-full grid grid-cols-12 gap-6 items-center">
+              <div className="col-span-12 md:col-span-2 font-display font-black leading-none opacity-60" style={{ fontSize: "clamp(5rem,10vw,140px)" }}>{d.num}</div>
+              <div className="col-span-12 md:col-span-10">
+                <h3 className="font-display font-black uppercase mb-4 leading-[1.0]" style={{ fontSize: "clamp(2rem,5.5vw,72px)" }}>{d.title}</h3>
+                <p className="opacity-80 max-w-4xl" style={{ fontSize: "clamp(1rem,1.8vw,22px)", lineHeight: "1.6" }}>{d.body}</p>
+              </div>
+            </div>
+          </div>
+        ))}
       </section>
 
       {/* ── PETITION ── */}
